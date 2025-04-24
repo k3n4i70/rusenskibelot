@@ -1,0 +1,604 @@
+<!DOCTYPE html>
+<html lang="bg">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Белот Русе P2P (Демо v6.0 - Custom AllTrump)</title>
+    <style>
+        /* --- Основни Стилове --- */
+        body { font-family: sans-serif; display: flex; flex-direction: column; align-items: center; background-color: #f0f0f0; margin: 0; padding: 10px; min-height: 100vh; box-sizing: border-box; }
+        .game-container { background-color: #2a6a2a; border: 5px solid #5d3a1a; border-radius: 10px; padding: 15px; width: 95%; max-width: 800px; box-shadow: 0 0 15px rgba(0, 0, 0, 0.5); position: relative; aspect-ratio: 4 / 3; display: flex; flex-direction: column; justify-content: space-between; overflow: hidden; }
+        .persistent-trump { position: absolute; top: 10px; right: 10px; background-color: rgba(0, 0, 0, 0.6); color: white; padding: 5px 10px; border-radius: 5px; font-size: 0.9em; z-index: 50; text-align: right; max-width: 150px; }
+        .persistent-trump .suit { font-size: 1.3em; font-weight: bold; }
+        .persistent-trump .suit.spades, .persistent-trump .suit.clubs { color: white; text-shadow: 1px 1px 1px black; }
+        .persistent-trump .suit.hearts, .persistent-trump .suit.diamonds { color: #ffcccc; text-shadow: 1px 1px 1px darkred; }
+        .player-area { display: flex; align-items: center; position: absolute; min-width: 80px; min-height: 70px; background: rgba(255, 255, 255, 0.1); border-radius: 5px; padding: 5px; transition: box-shadow 0.3s ease; z-index: 20; }
+        .player-area.current-player { box-shadow: 0 0 15px 5px yellow; }
+        .player-south { bottom: 10px; left: 50%; transform: translateX(-50%); flex-direction: column; align-items: center; width: 80%; }
+        .player-west { left: 10px; top: 50%; transform: translateY(-50%); flex-direction: column; align-items: flex-start; }
+        .player-north { top: 10px; left: 50%; transform: translateX(-50%); flex-direction: column-reverse; align-items: center; }
+        .player-east { right: 10px; top: 50%; transform: translateY(-50%); flex-direction: column; align-items: flex-end; }
+        .player-name { font-weight: bold; color: white; margin-bottom: 5px; font-size: 0.9em; text-shadow: 1px 1px 2px black; }
+        .hand { display: flex; flex-wrap: wrap; gap: 2px; justify-content: center; min-height: 50px; }
+        .player-west .hand, .player-east .hand { flex-direction: column; gap: 1px; }
+        .card { border: 1px solid black; border-radius: 5px; padding: 5px; min-width: 40px; min-height: 60px; background-color: white; display: inline-flex; flex-direction: column; justify-content: space-between; align-items: center; font-size: 1em; cursor: default; box-shadow: 1px 1px 3px rgba(0, 0, 0, 0.3); position: relative; user-select: none; transition: transform 0.2s ease, box-shadow 0.2s ease, border 0.2s ease; }
+        .card.playable { cursor: pointer; border: 2px solid yellow; box-shadow: 0 0 10px yellow; }
+        .card.playable:hover { transform: translateY(-10px); }
+        .card span { display: block; text-align: center; font-weight: bold; }
+        .card .rank { font-size: 1.2em; }
+        .card .suit { font-size: 1.5em; }
+        .card.spades .suit, .card.clubs .suit { color: black; }
+        .card.hearts .suit, .card.diamonds .suit { color: red; }
+        .card.hidden { background-color: #b0b0b0; background-image: repeating-linear-gradient(45deg, #a0a0a0, #a0a0a0 5px, #b0b0b0 5px, #b0b0b0 10px ); color: transparent; box-shadow: none; border: 1px solid #777; }
+        .player-west .card.hidden, .player-east .card.hidden { min-width: 20px; min-height: 60px; }
+        .player-north .card.hidden { min-width: 40px; min-height: 30px; }
+        .trick-area { position: absolute; top: 20%; left: 15%; width: 70%; height: 60%; pointer-events: none; z-index: 10; }
+        .trick-card-slot { position: absolute; transform: translate(-50%, -50%); }
+        .trick-card-slot.player-S { top: 75%; left: 50%; }
+        .trick-card-slot.player-W { top: 50%; left: 25%; }
+        .trick-card-slot.player-N { top: 25%; left: 50%; }
+        .trick-card-slot.player-E { top: 50%; left: 75%; }
+        .controls-area { position: absolute; bottom: calc(10px + 70px + 10px); left: 50%; transform: translateX(-50%); background: rgba(255, 255, 255, 0.8); padding: 10px; border-radius: 5px; text-align: center; z-index: 60; display: none; }
+        .controls-area.visible { display: block; }
+        .controls-area button { padding: 8px 15px; margin: 5px; font-size: 1em; cursor: pointer; border: none; border-radius: 5px; background-color: #4CAF50; color: white; transition: background-color 0.2s ease; }
+        .controls-area button:hover:not(:disabled) { background-color: #45a049; }
+        .controls-area button:disabled { background-color: #cccccc; cursor: not-allowed; }
+        .controls-area button.pass { background-color: #f44336; }
+        .controls-area button.pass:hover:not(:disabled) { background-color: #da190b; }
+        .controls-area button.bid { background-color: #2196F3; }
+        .controls-area button.bid:hover:not(:disabled) { background-color: #0b7dda; }
+        .announcements, .messages, .score-board { margin-top: 10px; background: rgba(255, 255, 255, 0.8); padding: 10px; border-radius: 5px; text-align: center; width: 90%; max-width: 600px; }
+        .announcements { min-height: 50px; text-align: left; }
+        .announcements p { text-align: center; margin-bottom: 5px; font-weight: bold; }
+        .declared-announcement-item { margin: 2px 0; padding: 3px; border-bottom: 1px dotted #ccc; font-size: 0.9em; }
+        .declared-announcement-item:last-child { border-bottom: none; }
+        .messages { min-height: 40px; font-weight: bold; color: #333; }
+        .score-board { font-size: 1.1em; }
+        .modal { display: none; position: fixed; z-index: 100; left: 0; top: 0; width: 100%; height: 100%; overflow: auto; background-color: rgba(0,0,0,0.5); padding-top: 60px; }
+        .modal-content { background-color: #fefefe; margin: 5% auto; padding: 20px; border: 1px solid #888; width: 80%; max-width: 500px; border-radius: 8px; text-align: center; }
+        .modal-content h3 { margin-top: 0; }
+        .modal-announcement-list label { display: block; margin: 8px 0; cursor: pointer; padding: 5px; border: 1px solid #eee; border-radius: 4px; }
+        .modal-announcement-list label:hover { background-color: #f0f0f0; }
+        .modal-announcement-list input[type="checkbox"] { margin-right: 10px; }
+        .modal-close-btn { margin-top: 15px; padding: 10px 20px; background-color: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 1em; }
+        .modal-close-btn:hover { background-color: #45a049; }
+        @media (max-width: 600px) { /* ... */ }
+        @media (max-width: 400px) { /* ... */ }
+    </style>
+</head>
+<body>
+
+    <h1>Белот Русе P2P (Демо v6.0)</h1>
+
+    <div class="game-container">
+         <div id="persistent-trump-info" class="persistent-trump">Коз: N/A</div>
+         <div id="player-area-N" class="player-area player-north"><div class="player-name">Север</div><div class="hand" id="hand-N"></div></div>
+         <div id="player-area-E" class="player-area player-east"><div class="player-name">Изток</div><div class="hand" id="hand-E"></div></div>
+         <div id="player-area-S" class="player-area player-south"><div class="hand" id="hand-S"></div><div class="player-name">Юг (Вие)</div></div>
+         <div id="player-area-W" class="player-area player-west"><div class="player-name">Запад</div><div class="hand" id="hand-W"></div></div>
+         <div class="trick-area" id="trick-area"> <div id="trick-slot-S" class="trick-card-slot player-S"></div> <div id="trick-slot-W" class="trick-card-slot player-W"></div> <div id="trick-slot-N" class="trick-card-slot player-N"></div> <div id="trick-slot-E" class="trick-card-slot player-E"></div> </div>
+         <div class="controls-area" id="controls-area"> <p>Вашият ход:</p> <div id="controls-buttons"></div> </div>
+    </div>
+
+    <div class="announcements" id="declared-announcements-display"> <p>Обявени Анонси:</p> <div id="declared-announcements-list">Няма обявени анонси в този рунд.</div> </div>
+    <div class="messages" id="messages">Натиснете "Нова Игра", за да започнете.</div>
+    <div class="score-board" id="score-board">Резултат: Ние: 0 - Те: 0</div>
+    <div style="margin-top: 10px;"> <button id="start-game-btn">Нова Игра</button> </div>
+    <div id="announcementModal" class="modal"> <div class="modal-content"> <h3>Обявете вашите анонси (първа ръка):</h3> <div id="modal-announcement-list" class="modal-announcement-list"></div> <button id="modal-confirm-btn" class="modal-close-btn">Потвърди и играй</button> </div> </div>
+
+    <script>
+        // --- Константи и Глобални Променливи ---
+        const SUITS = { SPADES: '♠', HEARTS: '♥', DIAMONDS: '♦', CLUBS: '♣' };
+        const SUIT_KEYS = Object.keys(SUITS);
+        const RANKS = ['7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+        const PLAYERS = ['S', 'W', 'N', 'E'];
+        const POINTS_NO_TRUMP = { '7': 0, '8': 0, '9': 0, '10': 10, 'J': 2, 'Q': 3, 'K': 4, 'A': 11 };
+        const POINTS_TRUMP    = { '7': 0, '8': 0, '9': 14, '10': 10, 'J': 20, 'Q': 3, 'K': 4, 'A': 11 };
+        const RANK_ORDER_FOR_SEQ = ['7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+        const ANNOUNCEMENTS_DEF = {
+            'BELOT':   { value: 10, points: 20, name: "Белот" },
+            'TERCA':   { value: 20, points: 20, name: "Терца", rankValue: -1 },
+            'QUARTA':  { value: 30, points: 50, name: "Кварта", rankValue: -1 },
+            'QUINTA':  { value: 40, points: 100, name: "Квинта", rankValue: -1 },
+            'SQ_7':    { value: 15, points: 0, name: "4x7", rankValue: RANK_ORDER_FOR_SEQ.indexOf('7') },
+            'SQ_8':    { value: 15, points: 0, name: "4x8", rankValue: RANK_ORDER_FOR_SEQ.indexOf('8') },
+            'SQ_10':   { value: 50, points: 100, name: "4x10", rankValue: RANK_ORDER_FOR_SEQ.indexOf('10') },
+            'SQ_Q':    { value: 50, points: 100, name: "4xQ", rankValue: RANK_ORDER_FOR_SEQ.indexOf('Q') },
+            'SQ_K':    { value: 50, points: 100, name: "4xK", rankValue: RANK_ORDER_FOR_SEQ.indexOf('K') },
+            'SQ_A':    { value: 60, points: 100, name: "4xA", rankValue: RANK_ORDER_FOR_SEQ.indexOf('A') },
+            'SQ_9':    { value: 65, points: 150, name: "4x9", rankValue: RANK_ORDER_FOR_SEQ.indexOf('9') },
+            'SQ_J':    { value: 70, points: 200, name: "4xJ", rankValue: RANK_ORDER_FOR_SEQ.indexOf('J') },
+            'SQ_10_NT':{ value: 75, points: 200, name: "4x10 (Без Коз)", rankValue: RANK_ORDER_FOR_SEQ.indexOf('10') },
+            'SQ_A_NT': { value: 80, points: 400, name: "4xA (Без Коз)", rankValue: RANK_ORDER_FOR_SEQ.indexOf('A') },
+        };
+        const BIDS = ['PASS', 'CLUBS', 'DIAMONDS', 'HEARTS', 'SPADES', 'NO_TRUMP', 'ALL_TRUMP'];
+        const BID_NAMES = {
+            'PASS': 'Пас', 'CLUBS': '♣ Спатия', 'DIAMONDS': '♦ Каро', 'HEARTS': '♥ Купа',
+            'SPADES': '♠ Пика', 'NO_TRUMP': 'Без Коз', 'ALL_TRUMP': 'Всичко Коз'
+        };
+
+        let deck = [];
+        let hands = { 'S': [], 'W': [], 'N': [], 'E': [] };
+        let currentDealer = 'S';
+        let currentPlayer = '';
+        let gameState = 'INIT';
+        let currentBid = { player: null, bid: 'PASS', level: -1 };
+        let biddingHistory = [];
+        let trumpSuit = null;
+        let currentTrick = [];
+        let trickHistory = [];
+        let teamScores = { 'NS': 0, 'EW': 0 };
+        let roundScores = { 'NS': { points: 0, announcements: 0 }, 'EW': { points: 0, announcements: 0 } };
+        let potentialAnnouncements = { 'S': [], 'W': [], 'N': [], 'E': [] };
+        let declaredAnnouncements = { 'S': [], 'W': [], 'N': [], 'E': [] };
+        let playerDeclaredFlags = { 'S': false, 'W': false, 'N': false, 'E': false };
+        let belotStatus = { S:{hasKQ:!1,declared:!1},W:{hasKQ:!1,declared:!1},N:{hasKQ:!1,declared:!1},E:{hasKQ:!1,declared:!1} };
+
+        // --- DOM Елементи ---
+        let persistentTrumpInfoEl, playerAreaEls, playerHands, trickAreaEl, trickCardSlots,
+            controlsAreaEl, controlsButtonsEl, declaredAnnouncementsDisplayEl,
+            declaredAnnouncementsListEl, messagesEl, scoreBoardEl, startGameBtn,
+            announcementModal, modalAnnouncementsList, modalConfirmBtn;
+
+        // --- Помощни UI Функции ---
+        function setMessage(msg) { console.log("MSG:", msg); if(messagesEl) messagesEl.textContent = msg; else console.warn("setMessage called before messagesEl assigned!"); }
+        function updateScoreBoard() { if(scoreBoardEl) scoreBoardEl.textContent = `Резултат: Ние (С/Ю): ${teamScores['NS']} - Те (И/З): ${teamScores['EW']}`; else console.warn("updateScoreBoard called before scoreBoardEl assigned!"); }
+        function renderCard(card, isHidden = false, isPlayableCard = false) { if (!card && isHidden) return `<div class="card hidden"></div>`; if (!card || !card.suit || !card.rank || !card.id) { console.error(`renderCard Error: Invalid card!`, card); return '<div class="card error">?</div>'; } const suitKey = Object.keys(SUITS).find(key => SUITS[key] === card.suit); if (!suitKey) { console.error(`renderCard Error: Invalid suit "${card.suit}"`); return '<div class="card error">?</div>'; } const suitClass = suitKey.toLowerCase(); const playableClass = isPlayableCard ? ' playable' : ''; return `<div class="card ${suitClass}${playableClass}" data-card-id="${card.id}"><span class="rank">${card.rank}</span><span class="suit">${card.suit}</span></div>`; }
+        function renderHand(player) { const handEl = playerHands[player]; if (!handEl) { console.error(`renderHand Error: El not found for ${player}`); return; } const cards = hands[player]; handEl.innerHTML = ''; const isHumanPlayer = player === 'S'; if (!cards) { console.warn(`renderHand: No cards array for ${player}.`); return; } if (cards.length === 0 && gameState !== 'INIT') { return; } if (!isHumanPlayer && gameState !== 'GAME_OVER') { for (let i = 0; i < cards.length; i++) handEl.innerHTML += renderCard(null, true); } else { const canPlayNow = gameState === 'PLAYING' && currentPlayer === player && isHumanPlayer; let cardsHtml = ''; cards.forEach((card, index) => { try { if (!card || !card.id) { console.error(`renderHand Error: Invalid card at index ${index} for ${player}:`, card); cardsHtml += '<div class="card error">!</div>'; return; } let playable = false; if (canPlayNow && gameState === 'PLAYING' && currentTrick !== undefined) { playable = isPlayable(player, card); } cardsHtml += renderCard(card, false, playable); } catch (e) { console.error(`Error rendering card ${card?.id} for ${player}:`, e); cardsHtml += '<div class="card error">E</div>'; } }); handEl.innerHTML = cardsHtml; if (canPlayNow) { handEl.querySelectorAll('.card.playable').forEach(cardEl => { if (!cardEl.onclick) { cardEl.addEventListener('click', () => { handlePlayCard(player, cardEl.dataset.cardId); }); } }); } } }
+        function renderAllHands() { PLAYERS.forEach(player => renderHand(player)); }
+        function renderTrickArea() { clearTrickArea(); currentTrick.forEach(play => { const slot = trickCardSlots[play.player]; if (slot) { try { const cardElString = renderCard(play.card); const tempDiv = document.createElement('div'); tempDiv.innerHTML = cardElString.trim(); const cardEl = tempDiv.firstChild; if(cardEl) slot.appendChild(cardEl); else console.error("renderTrickArea: Failed to create card el"); } catch (e) { console.error(`Error rendering trick card for ${play.player}:`, e); } } else { console.error("renderTrickArea Error: No slot for:", play.player); } }); }
+        function clearTrickArea() { PLAYERS.forEach(p => { if(trickCardSlots && trickCardSlots[p]) trickCardSlots[p].innerHTML=''; }); }
+        function hideBiddingControls() { if(controlsAreaEl) controlsAreaEl.classList.remove('visible'); if(controlsButtonsEl) controlsButtonsEl.innerHTML = ''; }
+        function updateCurrentPlayerHighlight() { PLAYERS.forEach(p => playerAreaEls[p]?.classList.toggle('current-player', p===currentPlayer&&(gameState==='BIDDING'||gameState==='PLAYING'))); }
+        function clearCurrentPlayerHighlight() { PLAYERS.forEach(p => playerAreaEls[p]?.classList.remove('current-player')); }
+        function updateBiddingControls() { hideBiddingControls(); if (gameState !== 'BIDDING') return; if (currentPlayer !== 'S') { setMessage(`Наддаване: Ред на ${getPlayerName(currentPlayer)} (Компютър)...`); setTimeout(() => { const aiBid = getAiBid(hands[currentPlayer]); handleBid(currentPlayer, aiBid); }, 1000 + Math.random() * 500); return; } controlsAreaEl.classList.add('visible'); controlsButtonsEl.innerHTML = ''; const currentLevel = BIDS.indexOf(currentBid.bid); const passBtn = document.createElement('button'); passBtn.textContent = BID_NAMES['PASS']; passBtn.classList.add('pass'); passBtn.onclick = () => handleBid('S', 'PASS'); controlsButtonsEl.appendChild(passBtn); BIDS.slice(1).forEach((bid) => { const btn = document.createElement('button'); btn.textContent = BID_NAMES[bid]; btn.classList.add('bid'); const bidLevel = BIDS.indexOf(bid); btn.disabled = bidLevel <= currentLevel; btn.onclick = () => handleBid('S', bid); controlsButtonsEl.appendChild(btn); }); }
+        function updatePersistentTrumpInfo() { let htmlContent = ""; if (!persistentTrumpInfoEl) return; if (!trumpSuit || trumpSuit === 'PASS' || gameState === 'BIDDING' || gameState === 'DEALING' || gameState === 'DEALING_FINAL') { htmlContent = currentBid.bid === 'PASS' ? "Наддаване..." : `Последно: ${getPlayerName(currentBid.player)} - ${BID_NAMES[currentBid.bid]}`; } else if (trumpSuit === 'NO_TRUMP') htmlContent = `<strong>Без Коз</strong><br/>(${getPlayerName(currentBid.player)})`; else if (trumpSuit === 'ALL_TRUMP') htmlContent = `<strong>Всичко Коз</strong><br/>(${getPlayerName(currentBid.player)})`; else { const sSym = SUITS[trumpSuit]; const sClass = trumpSuit.toLowerCase(); htmlContent = `<span class="suit ${sClass}">${sSym}</span> (${BID_NAMES[trumpSuit]})<br/>(${getPlayerName(currentBid.player)})`; } persistentTrumpInfoEl.innerHTML = htmlContent; }
+        function updatePlayableCards() { if(PLAYERS.includes(currentPlayer)) renderHand(currentPlayer); }
+        function cardToString(card) { return card ? `${card.rank}${card.suit}` : ''; }
+        function updateDeclaredAnnouncementsDisplay() { if (!declaredAnnouncementsListEl) return; declaredAnnouncementsListEl.innerHTML = ''; let hasAnyDeclared = false; PLAYERS.forEach(player => { declaredAnnouncements[player].forEach(ann => { hasAnyDeclared = true; const item = document.createElement('div'); item.classList.add('declared-announcement-item'); let text = `<strong>${getPlayerName(player)}:</strong> ${ANNOUNCEMENTS_DEF[ann.type].name}`; if (ann.type.startsWith('SQ')) text += ` (${ann.rank})`; else if (ann.type !== 'BELOT') text += ` до ${ann.rank}${ann.suit}`; if (ANNOUNCEMENTS_DEF[ann.type].points === 0 && ann.type !== 'BELOT') text += " (0т)"; else if (ann.type !== 'BELOT') text += ` (${ann.points}т.)`; else text += ` (${ann.points}т.)`; item.innerHTML = text; declaredAnnouncementsListEl.appendChild(item); }); }); if (!hasAnyDeclared) { declaredAnnouncementsListEl.innerHTML = 'Няма обявени анонси в този рунд.'; } }
+        function showAnnouncementModal(announcements) { if (!announcementModal || !modalAnnouncementsList || !modalConfirmBtn) return; console.log("Showing announcement modal for human"); modalAnnouncementsList.innerHTML = ''; announcements.forEach(ann => { const label = document.createElement('label'); const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = ann.id; cb.id = `ann-check-${ann.id}`; let txt = ANNOUNCEMENTS_DEF[ann.type].name; if (ann.type.startsWith('SQ')) txt += ` (${ann.rank})`; else txt += ` до ${ann.rank}${ann.suit}`; if (ANNOUNCEMENTS_DEF[ann.type].points === 0) txt += " (0т)"; label.appendChild(cb); label.appendChild(document.createTextNode(` ${txt}`)); modalAnnouncementsList.appendChild(label); }); modalConfirmBtn.onclick = confirmHumanAnnouncements; announcementModal.style.display = 'block'; }
+        function hideAnnouncementModal() { if(announcementModal) announcementModal.style.display = 'none'; }
+
+        // --- Логика на Играта ---
+        function createDeck() { deck = []; for (const sK in SUITS) { const s = SUITS[sK]; for (const r of RANKS) deck.push({ suit: s, rank: r, id: `${r}${s}` }); } }
+        function shuffleDeck() { for (let i = deck.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [deck[i], deck[j]] = [deck[j], deck[i]]; } }
+        function cutDeck() { if(deck.length<10)return; const mC=Math.floor(deck.length*.25),xC=Math.floor(deck.length*.75); const cP=Math.floor(Math.random()*(xC-mC+1))+mC; console.log(`Deck cut at ${cP}`); deck=deck.slice(cP).concat(deck.slice(0,cP)); }
+        function getNextPlayer(p) { if (!p||PLAYERS.indexOf(p)===-1){console.error(`Invalid player "${p}"!`);return PLAYERS[0];} const i=PLAYERS.indexOf(p); return PLAYERS[(i+1)%4]; }
+        function getPlayerOrderStartingFrom(sP) { if (!sP||PLAYERS.indexOf(sP)===-1){console.error(`Invalid startPlayer "${sP}"!`);return [...PLAYERS];} const i=PLAYERS.indexOf(sP); return [...PLAYERS.slice(i),...PLAYERS.slice(0,i)]; }
+        function dealInitialCards() { console.log("dealInitialCards called. Dealer:", currentDealer); setMessage(`Раздава ${getPlayerName(currentDealer)}...`); gameState='DEALING'; hands={S:[],W:[],N:[],E:[]}; trickHistory=[]; currentTrick=[]; potentialAnnouncements={S:[],W:[],N:[],E:[]}; declaredAnnouncements={S:[],W:[],N:[],E:[]}; playerDeclaredFlags={S:!1,W:!1,N:!1,E:!1}; belotStatus={S:{hasKQ:!1,declared:!1},W:{hasKQ:!1,declared:!1},N:{hasKQ:!1,declared:!1},E:{hasKQ:!1,declared:!1}}; roundScores={NS:{points:0,announcements:0},EW:{points:0,announcements:0}}; trumpSuit=null; currentBid={player:null,bid:'PASS',level:-1}; biddingHistory=[]; clearTrickArea(); updatePersistentTrumpInfo(); hideBiddingControls(); declaredAnnouncementsListEl.innerHTML='Няма обявени анонси в този рунд.'; const nextP=getNextPlayer(currentDealer); let order=getPlayerOrderStartingFrom(nextP); if (!order||typeof order[Symbol.iterator]!=='function'){console.error("FATAL: playerOrder not iterable!", order); setMessage("Крит. грешка!"); return;} for(let i=0;i<3;i++){for(const p of order){if(deck.length>0){const c=deck.pop();if(c)hands[p].push(c);else console.warn("Popped undefined!");}else{console.warn("Deck empty (3)!");break;}}} for(let i=0;i<2;i++){for(const p of order){if(deck.length>0){const c=deck.pop();if(c)hands[p].push(c);else console.warn("Popped undefined!");}else{console.warn("Deck empty (2)!");break;}}} sortHands(); renderAllHands(); gameState='BIDDING'; startBidding(); }
+        function dealFinalCards() { console.log("Dealing final cards..."); setMessage('Финално раздаване...'); gameState='DEALING_FINAL'; let order=getPlayerOrderStartingFrom(getNextPlayer(currentDealer)); for(let i=0;i<3;i++){for(const p of order){if(deck.length>0){const c=deck.pop();if(c)hands[p].push(c);else console.warn("Popped undef (final)!");}else{console.warn("Deck empty (final)!");break;}}} sortHands(); renderAllHands(); detectAllAnnouncements(); gameState='PLAYING'; currentPlayer=getNextPlayer(currentDealer); startPlayingPhase(); }
+        function sortHands() { const sO=[SUITS.CLUBS,SUITS.DIAMONDS,SUITS.HEARTS,SUITS.SPADES]; for(const p of PLAYERS){if(!hands[p])continue; hands[p].sort((a,b)=>{if(!a||!b)return 0; const sc=sO.indexOf(a.suit)-sO.indexOf(b.suit); if(sc!==0)return sc; const rvA=getRankValue(a,!1),rvB=getRankValue(b,!1); return rvA-rvB; });} }
+        function startBidding() { currentPlayer=getNextPlayer(currentDealer); console.log("Bidding starts. Player:", currentPlayer); setMessage(`Наддаване: Ред на ${getPlayerName(currentPlayer)}`); persistentTrumpInfoEl.textContent="Наддаване..."; biddingHistory=[]; updateCurrentPlayerHighlight(); updateBiddingControls(); }
+        function handleBid(p,b){if(p!==currentPlayer||gameState!=='BIDDING')return; if(p==='S')hideBiddingControls(); console.log(`${getPlayerName(p)} bids: ${BID_NAMES[b]}`); biddingHistory.push({player:p,bid:b}); const cL=BIDS.indexOf(currentBid.bid),nL=BIDS.indexOf(b); if(b==='PASS'){if(checkBiddingEnd()){finalizeBidding();}else{moveToNextBidder();}}else{if(nL>cL){currentBid={player:p,bid:b,level:nL}; updatePersistentTrumpInfo(); moveToNextBidder();}else{setMessage("Невалидно наддаване."); if(p==='S')updateBiddingControls();}}}
+        function moveToNextBidder() { currentPlayer=getNextPlayer(currentPlayer); console.log("Next bidder:", currentPlayer); setMessage(`Наддаване: Ред на ${getPlayerName(currentPlayer)}`); updateCurrentPlayerHighlight(); updateBiddingControls(); }
+        function checkBiddingEnd() { if(biddingHistory.length<4)return!1; const l4=biddingHistory.slice(-4); if(l4.every(b=>b.bid==='PASS')){if(biddingHistory.length===4||(biddingHistory[biddingHistory.length-5]?.bid==='PASS'))return!0;} if(currentBid.bid!=='PASS'&&biddingHistory.length>=3){return biddingHistory.slice(-3).every(b=>b.bid==='PASS');} return!1;}
+        function finalizeBidding() { hideBiddingControls(); clearCurrentPlayerHighlight(); if(currentBid.bid==='PASS'){setMessage("Всички пасуваха! Прераздаване..."); gameState='INIT'; persistentTrumpInfoEl.textContent="Прераздаване..."; setTimeout(startGame,2500);}else{trumpSuit=currentBid.bid; setMessage(`${getPlayerName(currentBid.player)} спечели с ${BID_NAMES[trumpSuit]}! Финално раздаване...`); updatePersistentTrumpInfo(); setTimeout(dealFinalCards,1500);} }
+        function detectAllAnnouncements() { potentialAnnouncements={S:[],W:[],N:[],E:[]}; belotStatus={S:{hasKQ:!1,declared:!1},W:{hasKQ:!1,declared:!1},N:{hasKQ:!1,declared:!1},E:{hasKQ:!1,declared:!1}}; PLAYERS.forEach(p=>{const h=hands[p]; const seq=findSequences(h); const kar=findKares(h,trumpSuit); let pot= [...seq,...kar]; if(trumpSuit&&trumpSuit!=='NO_TRUMP'&&trumpSuit!=='PASS'){const bel=findBelot(h); if(bel){pot.push(bel);belotStatus[p].hasKQ=!0;}else{belotStatus[p].hasKQ=!1;}}else{belotStatus[p].hasKQ=!1;} potentialAnnouncements[p]=pot;}); console.log("Potential Anns:", potentialAnnouncements); }
+        function findSequences(h) { let seqs=[]; const byS={}; SUIT_KEYS.forEach(k=>byS[SUITS[k]]=[]); h.forEach(c=>byS[c.suit].push(c)); for(const s of Object.values(SUITS)){const sC=byS[s]; if(sC.length<3)continue; sC.sort((a,b)=>RANK_ORDER_FOR_SEQ.indexOf(a.rank)-RANK_ORDER_FOR_SEQ.indexOf(b.rank)); let cur=[sC[0]]; for(let i=1;i<sC.length;i++){const cRI=RANK_ORDER_FOR_SEQ.indexOf(sC[i].rank); const pRI=RANK_ORDER_FOR_SEQ.indexOf(cur[cur.length-1].rank); if(cRI===pRI+1){cur.push(sC[i]);}else{if(cur.length>=3)seqs.push(createAnnouncementObject(cur)); cur=[sC[i]];}} if(cur.length>=3)seqs.push(createAnnouncementObject(cur));} let filt=[]; seqs.sort((a,b)=>b.value-a.value); for(const s of seqs){let isSub=!1; for(const ex of filt){if(s.suit===ex.suit&&s.cards.every(sC=>ex.cards.some(eC=>eC.id===sC.id))){isSub=!0;break;}} if(!isSub)filt.push(s);} return filt;}
+        function createAnnouncementObject(sC) { const len=sC.length; const hC=sC[len-1]; let t=''; if(len>=5)t='QUINTA'; else if(len===4)t='QUARTA'; else if(len===3)t='TERCA'; else return null; const d=ANNOUNCEMENTS_DEF[t]; const rV=RANK_ORDER_FOR_SEQ.indexOf(hC.rank); return {type:t,rank:hC.rank,suit:hC.suit,value:d.value,points:d.points,rankValue:rV,id:`${t}-${hC.rank}-${hC.suit}`,cards:sC}; }
+        function findBelot(h) { if(!trumpSuit||trumpSuit==='NO_TRUMP'||trumpSuit==='PASS')return null; const tS=SUITS[trumpSuit]; const hK=h.some(c=>c.suit===tS&&c.rank==='K'); const hQ=h.some(c=>c.suit===tS&&c.rank==='Q'); if(hK&&hQ){const d=ANNOUNCEMENTS_DEF['BELOT']; return {type:'BELOT',suit:tS,value:d.value,points:d.points,id:`BELOT-${tS}`,cards:h.filter(c=>c.suit===tS&&(c.rank==='K'||c.rank==='Q'))};} return null; }
+        function findKares(h,cT) { let k=[]; const byR={}; RANKS.forEach(r=>byR[r]=[]); h.forEach(c=>byR[c.rank].push(c)); for(const r of RANKS){if(byR[r].length===4){let oT=`SQ_${r}`; let kT=oT; let kD=ANNOUNCEMENTS_DEF[kT]; if(cT==='NO_TRUMP'){if(r==='A'&&ANNOUNCEMENTS_DEF['SQ_A_NT']){kT='SQ_A_NT';kD=ANNOUNCEMENTS_DEF[kT];}else if(r==='10'&&ANNOUNCEMENTS_DEF['SQ_10_NT']){kT='SQ_10_NT';kD=ANNOUNCEMENTS_DEF[kT];}} if(kD){k.push({type:kT,rank:r,value:kD.value,points:kD.points,rankValue:kD.rankValue,id:`${kT}`,cards:byR[r]});}}} return k;}
+        function compareAnnouncements(a1,a2){if(!a1)return-1;if(!a2)return 1;if(a1.value!==a2.value)return a1.value-a2.value;if(a1.rankValue!==a2.rankValue)return a1.rankValue-a2.rankValue;return 0;}
+        function startPlayingPhase() { console.log("Playing phase. Player:",currentPlayer);setMessage(`Игра: ${BID_NAMES[trumpSuit]||'Грешка'}. Ред на ${getPlayerName(currentPlayer)}.`); clearTrickArea(); currentTrick=[]; updateCurrentPlayerHighlight(); preparePlayerTurn();}
+        function preparePlayerTurn(){console.log(`preparePlayerTurn ${currentPlayer}. Trick#: ${trickHistory.length}, Declared: ${playerDeclaredFlags[currentPlayer]}`);if(trickHistory.length===0&&!playerDeclaredFlags[currentPlayer]){handleFirstTurnAnnouncement(currentPlayer);}else{allowCardPlay(currentPlayer);}}
+        function handleFirstTurnAnnouncement(player){
+            console.log(`Handling 1st turn ann for ${player}. Trump: ${trumpSuit}`);
+            let allowedAnnouncements = [];
+            const isNoTrumpGame = trumpSuit === 'NO_TRUMP';
+
+            // Филтриране на база Без Коз
+            if (isNoTrumpGame) {
+                allowedAnnouncements = potentialAnnouncements[player].filter(a =>
+                    a.type === 'SQ_A_NT' || a.type === 'SQ_10_NT'
+                );
+                console.log(`No Trump game: Allowed announcements for ${player}:`, allowedAnnouncements);
+            } else {
+                // Стандартно филтриране (без Белот, но с точки или valeur карета)
+                allowedAnnouncements = potentialAnnouncements[player].filter(a =>
+                    a.type !== 'BELOT' && (ANNOUNCEMENTS_DEF[a.type]?.points > 0 || ['SQ_7', 'SQ_8'].includes(a.type))
+                );
+                 console.log(`Trump game: Allowed announcements for ${player}:`, allowedAnnouncements);
+            }
+
+            if (player === 'S') { // Човек
+                if (allowedAnnouncements.length > 0) {
+                    showAnnouncementModal(allowedAnnouncements); // Показваме само позволените
+                } else {
+                    setMessage("Нямате валидни анонси за обявяване. Играйте карта.");
+                    playerDeclaredFlags[player] = true;
+                    allowCardPlay(player);
+                }
+            } else { // AI
+                let highestAnn = null;
+                allowedAnnouncements.forEach(ann => { // Търсим най-висок сред позволените
+                     if (compareAnnouncements(ann, highestAnn) > 0) { highestAnn = ann; }
+                });
+
+                if (highestAnn) {
+                    declaredAnnouncements[player].push(highestAnn);
+                    updateDeclaredAnnouncementsDisplay();
+                    let annText = `${getPlayerName(player)}: ${ANNOUNCEMENTS_DEF[highestAnn.type].name}`;
+                     if (highestAnn.type.startsWith('SQ')) annText += ` (${highestAnn.rank})`;
+                     else if (highestAnn.type !== 'BELOT') annText += ` до ${highestAnn.rank}${highestAnn.suit}`; // Коригирано
+                     if (ANNOUNCEMENTS_DEF[highestAnn.type].points === 0) annText += " (0т)";
+                    setMessage(annText);
+                    console.log(`AI ${player} declared ${highestAnn.id}`);
+                }
+                playerDeclaredFlags[player] = true;
+                allowCardPlay(player);
+            }
+        }
+        function confirmHumanAnnouncements(){console.log("Human confirmed anns"); declaredAnnouncements['S']=[]; const cbs=modalAnnouncementsList.querySelectorAll('input[type="checkbox"]:checked'); cbs.forEach(cb=>{const ann=potentialAnnouncements['S'].find(a=>a.id===cb.value); if(ann)declaredAnnouncements['S'].push(ann);}); playerDeclaredFlags['S']=!0; hideAnnouncementModal(); updateDeclaredAnnouncementsDisplay(); setMessage("Изберете карта."); allowCardPlay('S');}
+        function allowCardPlay(p){console.log(`Allowing card play ${p}`); updatePlayableCards(); if(p!=='S'){triggerAIPlay();}}
+        function handlePlayCard(p,cId){console.log(`handlePlayCard ${p} ${cId}`); if(p!==currentPlayer||gameState!=='PLAYING')return; if(trickHistory.length===0&&p=='S'&&!playerDeclaredFlags[p]){setMessage("Потвърдете анонсите.");return;} const card=hands[p].find(c=>c.id===cId); if(!card)return; if(!isPlayable(p,card)){setMessage("Невалиден ход!");return;} if(trumpSuit&&trumpSuit!='NO_TRUMP'&&trumpSuit!='PASS'&&belotStatus[p].hasKQ&&!belotStatus[p].declared){const tS=SUITS[trumpSuit]; if(card.suit==tS&&(card.rank=='K'||card.rank=='Q')){const ann=potentialAnnouncements[p].find(a=>a.type=='BELOT'); if(ann){const decl=p=='S'?confirm(`Белот (${card.rank}${card.suit})?`):!0; if(decl){belotStatus[p].declared=!0; setMessage(`${getPlayerName(p)} обявява БЕЛОТ!`); if(!declaredAnnouncements[p].some(a=>a.type=='BELOT'))declaredAnnouncements[p].push(ann); updateDeclaredAnnouncementsDisplay();}}}} hands[p]=hands[p].filter(c=>c.id!==cId); currentTrick.push({player:p,card:card}); renderAllHands(); renderTrickArea(); hideBiddingControls(); moveToNextPlayerInTrick();}
+        function moveToNextPlayerInTrick(){if(currentTrick.length===4){determineTrickWinner();}else{currentPlayer=getNextPlayer(currentPlayer); setMessage(`Игра: ${BID_NAMES[trumpSuit]}. Ред ${getPlayerName(currentPlayer)}.`); updateCurrentPlayerHighlight(); preparePlayerTurn();}}
+        function determineTrickWinner(){gameState='SCORING_TRICK'; clearCurrentPlayerHighlight(); setMessage('Изчисляване...'); let winP=findCurrentTrickWinner(); if(!winP){console.error("No trick winner!"); winP=currentTrick[0];} const win=winP.player; let pts=0; currentTrick.forEach(pl=>pts+=getCardPoints(pl.card)); const last=hands.S.length===0&&hands.W.length===0&&hands.N.length===0&&hands.E.length===0; if(last)pts+=10; const winT=(win=='N'||win=='S')?'NS':'EW'; roundScores[winT].points+=pts; setMessage(`${getPlayerName(win)} печели с ${cardToString(winP.card)}. Точки: ${pts}${last?' (+10) ':''}`); trickHistory.push({winner:win,trick:[...currentTrick],points:pts}); setTimeout(()=>{clearTrickArea(); if(last){endRound();}else{currentPlayer=win;gameState='PLAYING';startPlayingPhase();}},1800);}
+                        // --- НОВА endRound (v6.4 - Fix nsScore/ewScore Init) ---
+        function endRound() {
+            gameState = 'END_ROUND';
+            let initialMessage = 'Край на рунда. Изчисляване...';
+
+            const isNoTrumpGame = trumpSuit === 'NO_TRUMP';
+            const isAllTrumpGame = trumpSuit === 'ALL_TRUMP';
+            const multiplier = isNoTrumpGame ? 2 : 1;
+
+            // --- 1. Точкуване на Анонси ---
+            let highestAnnNS = null; let highestAnnEW = null;
+            let belotPointsNS = 0; let belotPointsEW = 0;
+            let regularAnnPointsNS_Raw = 0; let regularAnnPointsEW_Raw = 0;
+
+             ['N', 'S'].forEach(p => {
+                 declaredAnnouncements[p].forEach(ann => {
+                     if (ann.type === 'BELOT') { belotPointsNS = Math.max(belotPointsNS, ann.points); }
+                     else { regularAnnPointsNS_Raw += ann.points; if (compareAnnouncements(ann, highestAnnNS) > 0) { highestAnnNS = ann; } }
+                 });
+             });
+             ['E', 'W'].forEach(p => {
+                  declaredAnnouncements[p].forEach(ann => {
+                      if (ann.type === 'BELOT') { belotPointsEW = Math.max(belotPointsEW, ann.points); }
+                      else { regularAnnPointsEW_Raw += ann.points; if (compareAnnouncements(ann, highestAnnEW) > 0) { highestAnnEW = ann; } }
+                  });
+             });
+
+            let nsGetsRegularAnns = false;
+            let ewGetsRegularAnns = false;
+            const comparisonResult = compareAnnouncements(highestAnnNS, highestAnnEW);
+            if (comparisonResult > 0) { nsGetsRegularAnns = true; initialMessage = `Ние печелим анонсите (${highestAnnNS.name}).`; }
+            else if (comparisonResult < 0) { ewGetsRegularAnns = true; initialMessage = `Те печелят анонсите (${highestAnnEW.name}).`; }
+            else if (highestAnnNS) { initialMessage = "Равни анонси - без точки (освен Белот)."; }
+            else { initialMessage = "Няма редовни анонси."; }
+
+            const finalAnnPointsNS = belotPointsNS + (nsGetsRegularAnns ? regularAnnPointsNS_Raw : 0);
+            const finalAnnPointsEW = belotPointsEW + (ewGetsRegularAnns ? regularAnnPointsEW_Raw : 0);
+
+            // --- 2. Проверка за Капо ---
+            let isCapot = false;
+            let capotTeam = null;
+            if (trickHistory.length === 8) {
+                 if (trickHistory.every(t => t.winner === 'N' || t.winner === 'S')) { isCapot = true; capotTeam = 'NS'; }
+                 else if (trickHistory.every(t => t.winner === 'E' || t.winner === 'W')) { isCapot = true; capotTeam = 'EW'; }
+            }
+
+            // --- 3. Изчисляване на финалните точки за рунда ---
+            const biddingTeam = (currentBid.player === 'N' || currentBid.player === 'S') ? 'NS' : 'EW';
+            let nsRoundScore = 0; // Инициализация тук, за да е винаги дефинирана
+            let ewRoundScore = 0; // Инициализация тук, за да е винаги дефинирана
+            const trickPointsNS_Raw = roundScores['NS'].points;
+            const trickPointsEW_Raw = roundScores['EW'].points;
+
+            if (isCapot) {
+                // --- Логика при Капо ---
+                const winnerTeam = capotTeam;
+                const loserTeam = (winnerTeam === 'NS') ? 'EW' : 'NS';
+                const loserWasBidding = loserTeam === biddingTeam;
+                let penalty = -10;
+                if (loserWasBidding) { penalty = -20; }
+
+                initialMessage += ` КАПО за ${winnerTeam === 'NS' ? 'Нас' : 'Тях'}!`;
+                if (loserWasBidding) initialMessage += ` (${loserTeam === 'NS' ? 'Ние' : 'Те'} сме и Вътре!)`;
+
+                if (winnerTeam === 'NS') { nsRoundScore = 9 + Math.round((finalAnnPointsNS * multiplier) / 10); }
+                else { ewRoundScore = 9 + Math.round((finalAnnPointsEW * multiplier) / 10); }
+                if (loserTeam === 'NS') { nsRoundScore = (penalty * multiplier) + Math.round((finalAnnPointsNS * multiplier) / 10); }
+                else { ewRoundScore = (penalty * multiplier) + Math.round((finalAnnPointsEW * multiplier) / 10); }
+
+            } else {
+                // --- Нормална игра (без капо) ---
+
+                // --- Сравнение за Вътре/Вън ---
+                const pointsForCompareNS = trickPointsNS_Raw + (nsGetsRegularAnns ? regularAnnPointsNS_Raw : 0);
+                const pointsForCompareEW = trickPointsEW_Raw + (ewGetsRegularAnns ? regularAnnPointsEW_Raw : 0);
+                const biddingTeamCompareTotal = (biddingTeam === 'NS') ? pointsForCompareNS : pointsForCompareEW;
+                const defendingTeamCompareTotal = (biddingTeam === 'NS') ? pointsForCompareEW : pointsForCompareNS;
+                const isInside = biddingTeamCompareTotal < defendingTeamCompareTotal;
+
+                // --- Закръгляне САМО на точките от взятки ---
+                 let roundedNS, roundedEW;
+                 if (isNoTrumpGame) { /* ... Логика за закръгляне на 5 ... */
+                    roundedNS = Math.round(trickPointsNS_Raw / 5) * 5;
+                    roundedEW = Math.round(trickPointsEW_Raw / 5) * 5;
+                    const totalRaw = trickPointsNS_Raw + trickPointsEW_Raw;
+                    const targetTotal = totalRaw >= 135 ? 140 : 130;
+                    if (roundedNS + roundedEW !== targetTotal) { /* Логика за корекция */
+                        if (roundedNS + roundedEW > targetTotal) { if (roundedNS > trickPointsNS_Raw && roundedNS >= roundedEW) roundedNS -= 5; else if (roundedEW > trickPointsEW_Raw) roundedEW -= 5; else if(roundedNS >= roundedEW) roundedNS -=5; else roundedEW -=5;}
+                        else { if (roundedEW < trickPointsEW_Raw && roundedEW <= roundedNS) roundedEW += 5; else if (roundedNS < trickPointsNS_Raw) roundedNS += 5; else if(roundedEW <= roundedNS) roundedEW +=5; else roundedNS +=5;}
+                        if (roundedNS + roundedEW !== targetTotal) console.warn(`NT Rounding Adjust failed: ${roundedNS}+${roundedEW} != ${targetTotal}`);
+                    }
+                 } else if (isAllTrumpGame) { /* ... Логика за закръгляне при Всичко Коз (проблем на 4) ... */
+                     if (trickPointsNS_Raw % 10 === 4) { if (trickPointsNS_Raw <= trickPointsEW_Raw) { roundedNS = Math.ceil(trickPointsNS_Raw / 10) * 10; roundedEW = Math.floor(trickPointsEW_Raw / 10) * 10; } else { roundedEW = Math.ceil(trickPointsEW_Raw / 10) * 10; roundedNS = Math.floor(trickPointsNS_Raw / 10) * 10; } }
+                     else { roundedNS = Math.round(trickPointsNS_Raw / 10) * 10; roundedEW = Math.round(trickPointsEW_Raw / 10) * 10; if(roundedNS+roundedEW==250){if(trickPointsNS_Raw%10>trickPointsEW_Raw%10)roundedNS+=10;else roundedEW+=10;} else if(roundedNS+roundedEW==270){if(trickPointsNS_Raw%10<trickPointsEW_Raw%10)roundedNS-=10;else roundedEW-=10;} }
+                 } else { /* ... Логика за закръгляне при Коз (проблем на 6) ... */
+                     if (trickPointsNS_Raw % 10 === 6) { if (trickPointsNS_Raw <= trickPointsEW_Raw) { roundedNS = Math.ceil(trickPointsNS_Raw / 10) * 10; roundedEW = Math.floor(trickPointsEW_Raw / 10) * 10; } else { roundedEW = Math.ceil(trickPointsEW_Raw / 10) * 10; roundedNS = Math.floor(trickPointsNS_Raw / 10) * 10; } }
+                     else { roundedNS = Math.round(trickPointsNS_Raw / 10) * 10; roundedEW = Math.round(trickPointsEW_Raw / 10) * 10; if(roundedNS+roundedEW==150){if(trickPointsNS_Raw%10>trickPointsEW_Raw%10)roundedNS+=10;else roundedEW+=10;} else if(roundedNS+roundedEW==170){if(trickPointsNS_Raw%10<trickPointsEW_Raw%10)roundedNS-=10;else roundedEW-=10;} }
+                 }
+                 console.log(`Raw trick pts: ${trickPointsNS_Raw}-${trickPointsEW_Raw} -> Rounded: ${roundedNS}-${roundedEW}`);
+
+                // --- Изчисляване на финалния резултат за рунда ---
+                if (!isInside) {
+                    // --- УСПЕШЕН ДОГОВОР ---
+                    initialMessage += ` Успешен договор ${BID_NAMES[trumpSuit]}!`;
+                    nsRoundScore = Math.round(((roundedNS + finalAnnPointsNS) * multiplier) / 10);
+                    ewRoundScore = Math.round(((roundedEW + finalAnnPointsEW) * multiplier) / 10);
+                } else {
+                    // --- ВЪТРЕ! ---
+                    initialMessage += ` ${biddingTeam === 'NS' ? 'Ние' : 'Те'} сме вътре!`;
+                    const penalty = -10 * multiplier; // Наказание за "вътре"
+
+                    if (biddingTeam === 'NS') { // Ние сме Вътре
+                         nsRoundScore = penalty + Math.round((finalAnnPointsNS * multiplier) / 10);
+                         ewRoundScore = Math.round(((roundedNS + roundedEW + finalAnnPointsEW) * multiplier) / 10); // Те взимат общите ЗАКРЪГЛЕНИ + техните анонси
+                    } else { // Те са Вътре
+                         ewRoundScore = penalty + Math.round((finalAnnPointsEW * multiplier) / 10);
+                         nsRoundScore = Math.round(((roundedNS + roundedEW + finalAnnPointsNS) * multiplier) / 10); // Ние взимаме общите ЗАКРЪГЛЕНИ + нашите анонси
+                    }
+                }
+            } // Край на else (не е капо)
+
+             teamScores['NS'] += nsRoundScore;
+             teamScores['EW'] += ewRoundScore;
+
+             updateScoreBoard();
+             setMessage(`${initialMessage} | Рез. рунд${isNoTrumpGame ? ' (x2)' : ''}: Ние ${nsRoundScore}, Те ${ewRoundScore}. | Общ: ${teamScores['NS']}-${teamScores['EW']}`);
+
+            // --- Проверка за край на играта (151) ---
+             if (teamScores['NS'] >= 151 || teamScores['EW'] >= 151) {
+                 gameState = 'GAME_OVER';
+                 let winner = "";
+                 if (teamScores['NS'] >= 151 && teamScores['EW'] < 151) winner = "Ние (Север/Юг)";
+                 else if (teamScores['EW'] >= 151 && teamScores['NS'] < 151) winner = "Те (Изток/Запад)";
+                 else if (teamScores['NS'] > teamScores['EW']) winner = "Ние (Север/Юг)";
+                 else if (teamScores['EW'] > teamScores['NS']) winner = "Те (Изток/Запад)";
+                 else winner = "Равенство!";
+
+                 const roundSummary = messagesEl.textContent.split('|')[0].trim();
+                 setMessage(`${roundSummary} | КРАЙ НА ИГРАТА! ${winner} печелят с ${teamScores['NS']} на ${teamScores['EW']}!`);
+                 if(startGameBtn) startGameBtn.disabled = false;
+
+             } else {
+                 currentDealer = getNextPlayer(currentDealer);
+                 setTimeout(startGame, 4000);
+             }
+         } // Край на endRound
+        function getAiBid(h) { let sC={}; let hTC={}; SUIT_KEYS.forEach(k=>{sC[SUITS[k]]=0; hTC[SUITS[k]]=!1;}); for(const c of h){sC[c.suit]++; if(c.rank=='J'||c.rank=='9')hTC[c.suit]=!0;} let bS='PASS',mC=0; for(const sK in SUITS){const s=SUITS[sK]; if(sC[s]>mC&&sC[s]>=3){if(hTC[s]||bS=='PASS'||!hTC[SUITS[Object.keys(SUITS).find(k=>SUITS[k]==bS)]]){mC=sC[s];bS=sK;}}} const pBL=BIDS.indexOf(bS); if(pBL>currentBid.level)return bS; else return 'PASS';}
+        function triggerAIPlay() { if(currentPlayer=='S'||gameState!=='PLAYING')return; setMessage(`Ред ${getPlayerName(currentPlayer)} (AI)...`); hideBiddingControls(); setTimeout(()=>{const pCards=hands[currentPlayer].filter(c=>isPlayable(currentPlayer,c)); if(pCards.length===0){console.error(`AI ${currentPlayer} no playable cards!`); if(hands[currentPlayer].length>0)handlePlayCard(currentPlayer,hands[currentPlayer][0].id); return;} let card; pCards.sort((a,b)=>getRankValue(a,isTrump(a))-getRankValue(b,isTrump(b))); card=pCards[0]; if(currentTrick.length>0){const winP=findCurrentTrickWinner(); const partner=getPartner(currentPlayer); if(winP && winP.player!==partner){for(const c of pCards){if(wouldWinTrick(c,currentTrick,currentPlayer)){card=c;break;}}}else{card=pCards[0];}}else{card=pCards[0];} console.log(`AI ${currentPlayer} plays ${cardToString(card)}`); handlePlayCard(currentPlayer,card.id);},1000+Math.random()*500); }
+        function wouldWinTrick(cT,cTP,p) { if(cTP.length===0)return!0; const hypo=[...cTP,{player:p,card:cT}]; let winP=findCurrentTrickWinnerHypothetical(hypo); return winP && winP.player===p; }
+        function getPartner(p) { const i=PLAYERS.indexOf(p); return PLAYERS[(i+2)%4]; }
+        function getPlayerName(p) { return {S:'Юг',W:'Запад',N:'Север',E:'Изток'}[p]||'X'; }
+        function isTrump(c) { if(!c) return false; if(!trumpSuit||trumpSuit=='PASS')return!1; if(trumpSuit=='ALL_TRUMP')return!0; if(trumpSuit=='NO_TRUMP')return!1; const tS=SUITS[trumpSuit]; return c.suit===tS; }
+        function getRankValue(c,isT) { const oNT=['7','8','9','J','Q','K','10','A']; const oT=['7','8','Q','K','10','A','9','J']; if(!c || !c.rank) { console.error("Invalid card in getRankValue:", c); return -1;} if (isT || trumpSuit === 'ALL_TRUMP') return oT.indexOf(c.rank); else return oNT.indexOf(c.rank); }
+        function getCardPoints(c) { let iT=isTrump(c); if(!c || !c.rank) { console.error("Invalid card in getCardPoints:", c); return 0; } if(trumpSuit=='NO_TRUMP')return POINTS_NO_TRUMP[c.rank]; if(trumpSuit=='ALL_TRUMP')return POINTS_TRUMP[c.rank]; return iT?POINTS_TRUMP[c.rank]:POINTS_NO_TRUMP[c.rank]; }
+
+        // --- КОРИГИРАНА isPlayable (v6.0) ---
+        function isPlayable(player, card) {
+             if (gameState !== 'PLAYING' || player !== currentPlayer) return false;
+             if (!card) { console.error("isPlayable called with invalid card!"); return false; }
+             if (currentTrick.length === 0) return true;
+
+             const leadCard = currentTrick[0].card;
+             if (!leadCard) { console.error("isPlayable: No lead card!"); return false; }
+             const leadSuit = leadCard.suit;
+             const playerHand = hands[player];
+             if (!playerHand) { console.error(`isPlayable: No hand for ${player}!`); return false; }
+
+             const isAllTrumpGame = trumpSuit === 'ALL_TRUMP';
+             const hasLeadSuit = playerHand.some(c => c && c.suit === leadSuit);
+
+             if (hasLeadSuit) {
+                 // ---- ТРЯБВА ДА СЛЕДВА БОЯТА ----
+                 if (card.suit !== leadSuit) return false;
+
+                 // ---- Трябва ли да качи (с карта от ИСКАНАТА боя)? ----
+                 const currentWinningPlay = findCurrentTrickWinner();
+                 if (currentWinningPlay && currentWinningPlay.card) {
+                     const winningCard = currentWinningPlay.card;
+                     const useTrumpRankingForWinComp = isAllTrumpGame || isTrump(winningCard);
+                     const winningValue = getRankValue(winningCard, useTrumpRankingForWinComp);
+                     const cardIsEffectivelyTrump = isAllTrumpGame || isTrump(card);
+                     const cardValue = getRankValue(card, cardIsEffectivelyTrump);
+
+                     // При AllTrump и стандартна игра, АКО ВОДЕЩАТА Е КОЗ -> трябва да се качи
+                     if (isAllTrumpGame || isTrump(leadCard)) {
+                         const hasHigherInLeadSuit = playerHand.some(c =>
+                             c && c.suit === leadSuit &&
+                             getRankValue(c, isAllTrumpGame || isTrump(c)) > winningValue
+                         );
+                         if (hasHigherInLeadSuit && cardValue <= winningValue) {
+                             return false; // Трябва да играе по-висока
+                         }
+                     }
+                     // Ако не е AllTrump и водещата НЕ Е коз, не трябва да се качва
+                 }
+                 return true; // Валиден ход от боята
+
+             } else {
+                 // ---- НЯМА ОТ ИСКАНАТА БОЯ ----
+                 const currentWinningPlay = findCurrentTrickWinner();
+                 const partner = getPartner(player);
+
+                 // *** Проверка за Печеливш Партньор ***
+                 if (currentWinningPlay && currentWinningPlay.player === partner) {
+                     if (!isAllTrumpGame) {
+                         const hasAnyTrump = playerHand.some(c => c && isTrump(c));
+                         if (hasAnyTrump && (!card || !isTrump(card))) {
+                              return false; // Все още трябва да играеш коз, ако имаш
+                         }
+                     }
+                     return true; // Валидно е да не се качва
+                 }
+
+                 // ---- Партньорът НЕ печели ИЛИ няма текущ победител ----
+
+                 // *** НОВА ЛОГИКА ЗА ALL TRUMP - OFF SUIT (User Rule) ***
+                 if (isAllTrumpGame) {
+                      // Ако е Всичко Коз и нямаш от боята, НЕ МОЖЕШ да спечелиш
+                      // и правилото за качване НЕ ВАЖИ. Можеш да играеш ВСЯКА карта.
+                      console.log(`isPlayable OK [AllTrump/NoFollow/UserRule]: Playing any card ${card.id} allowed.`);      
+                      return true;
+                 } else {
+                     // ---- СТАНДАРТНА ИГРА С КОЗ (НЯМАШ от боята) ----
+                     const hasAnyTrump = playerHand.some(c => c && isTrump(c));
+                     if (hasAnyTrump) {
+                         if (!card || !isTrump(card)) return false; // Трябва да играе коз
+
+                         // Трябва ли да качи коза?
+                         if (currentWinningPlay && currentWinningPlay.card && isTrump(currentWinningPlay.card)) {
+                             const winningValue = getRankValue(currentWinningPlay.card, true);
+                             const hasHigherTrump = playerHand.some(c =>
+                                 c && isTrump(c) && getRankValue(c, true) > winningValue
+                             );
+                             if (hasHigherTrump && getRankValue(card, true) <= winningValue) {
+                                 return false;
+                             }
+                         }
+                         return true; // Валиден коз
+                     } else {
+                         return true; // Няма коз, играе всичко
+                     }
+                 }
+             }
+        } // Край на isPlayable
+
+        // --- КОРИГИРАНА findCurrentTrickWinnerHypothetical (v6.0 - Custom AllTrump) ---
+        function findCurrentTrickWinnerHypothetical(tP) {
+             if (!tP || tP.length === 0) return null;
+             let winningPlay = tP[0];
+             if (!winningPlay || !winningPlay.card) { console.error("Invalid first play in trick", tP); return null;}
+             let trickSuit = winningPlay.card.suit; // Водещата боя ЗАПОМНЯМЕ!
+
+             const isAllTrumpGame = trumpSuit === 'ALL_TRUMP';
+
+             for (let i = 1; i < tP.length; i++) {
+                 const currentPlay = tP[i];
+                 const winningCard = winningPlay.card;
+                 const currentCard = currentPlay.card;
+                 if (!winningCard || !currentCard) { console.error("Invalid card in hypothetical trick:", tP); continue; }
+
+                 if (isAllTrumpGame) {
+                     // ---- ЛОГИКА ЗА ALL TRUMP (по user rule) ----
+                     // Само карта от ВОДЕЩАТА боя (trickSuit) може да спечели.
+                     if (currentCard.suit === trickSuit) {
+                         // Ако и двете са от водещата боя, сравняваме по козов ранг
+                         if (winningCard.suit === trickSuit) {
+                              // Сравняваме силата винаги като коз при AllTrump
+                              if (getRankValue(currentCard, true) > getRankValue(winningCard, true)) {
+                                 winningPlay = currentPlay;
+                              }
+                         } else {
+                             // Ако текущата е от водещата, а печелившата досега НЕ Е, текущата печели
+                             winningPlay = currentPlay;
+                         }
+                     }
+                     // Ако currentCard НЕ Е от водещата боя, тя НЕ МОЖЕ да спечели.
+
+                 } else {
+                     // ---- Стандартна логика за игра с коз или без коз ----
+                     const wIT = isTrump(winningCard);
+                     const cIT = isTrump(currentCard);
+                     const wRV = getRankValue(winningCard, wIT);
+                     const cRV = getRankValue(currentCard, cIT);
+
+                     if (cIT && !wIT) winningPlay = currentPlay;
+                     else if (cIT && wIT && cRV > wRV) winningPlay = currentPlay;
+                     else if (!cIT && !wIT && currentCard.suit === trickSuit && cRV > wRV) winningPlay = currentPlay;
+                 }
+             }
+             return winningPlay;
+        }
+        function findCurrentTrickWinner() { return findCurrentTrickWinnerHypothetical(currentTrick); }
+
+        // --- Инициализация ---
+        function startGame() {
+            console.log("startGame function entered!");
+            if (!messagesEl) { console.error("startGame: messagesEl not ready!"); return; }
+            setMessage("Подготовка за нова игра...");
+            if (!startGameBtn) { console.error("Start button not found IN startGame!"); return; }
+            startGameBtn.disabled = true;
+            gameState = 'INIT';
+            if(typeof clearCurrentPlayerHighlight === 'function') clearCurrentPlayerHighlight(); else console.error("clearCurrentPlayerHighlight undefined");
+            if(typeof hideBiddingControls === 'function') hideBiddingControls(); else console.error("hideBiddingControls undefined");
+            if(typeof hideAnnouncementModal === 'function') hideAnnouncementModal(); else console.error("hideAnnouncementModal undefined");
+            if(declaredAnnouncementsDisplayEl) declaredAnnouncementsDisplayEl.style.display = 'block';
+            if(declaredAnnouncementsListEl) declaredAnnouncementsListEl.innerHTML = 'Няма обявени анонси в този рунд.';
+
+            try {
+                console.log("startGame: Initializing game state...");
+                if (typeof createDeck !== 'function') throw new Error("createDeck is not a function"); createDeck();
+                if (typeof shuffleDeck !== 'function') throw new Error("shuffleDeck is not a function"); shuffleDeck();
+                if (typeof cutDeck !== 'function') throw new Error("cutDeck is not a function"); cutDeck();
+                if (typeof dealInitialCards !== 'function') throw new Error("dealInitialCards is not a function"); dealInitialCards();
+                if (typeof updateScoreBoard !== 'function') throw new Error("updateScoreBoard is not a function"); updateScoreBoard();
+            } catch (error) { console.error("CRITICAL Error during game initialization:", error); setMessage(`Грешка при стартиране: ${error.message}. Презаредете.`); return; }
+            startGameBtn.disabled = false;
+            console.log("startGame finished successfully.");
+        }
+
+        // --- Event Listeners и Първоначално състояние ---
+         document.addEventListener('DOMContentLoaded', () => {
+            console.log("DOM fully loaded and parsed (v6.0)");
+            // Присвояване на DOM елементите...
+            persistentTrumpInfoEl = document.getElementById('persistent-trump-info');
+            playerAreaEls = { S: document.getElementById('player-area-S'), W: document.getElementById('player-area-W'), N: document.getElementById('player-area-N'), E: document.getElementById('player-area-E') };
+            playerHands = { S: document.getElementById('hand-S'), W: document.getElementById('hand-W'), N: document.getElementById('hand-N'), E: document.getElementById('hand-E') };
+            trickAreaEl = document.getElementById('trick-area');
+            trickCardSlots = { S: document.getElementById('trick-slot-S'), W: document.getElementById('trick-slot-W'), N: document.getElementById('trick-slot-N'), E: document.getElementById('trick-slot-E') };
+            controlsAreaEl = document.getElementById('controls-area');
+            controlsButtonsEl = document.getElementById('controls-buttons');
+            declaredAnnouncementsDisplayEl = document.getElementById('declared-announcements-display');
+            declaredAnnouncementsListEl = document.getElementById('declared-announcements-list');
+            messagesEl = document.getElementById('messages');
+            scoreBoardEl = document.getElementById('score-board');
+            startGameBtn = document.getElementById('start-game-btn');
+            announcementModal = document.getElementById('announcementModal');
+            modalAnnouncementsList = document.getElementById('modal-announcement-list');
+            modalConfirmBtn = document.getElementById('modal-confirm-btn');
+            console.log("DOM elements assigned.");
+
+            // Проверка за критични елементи...
+             if (!persistentTrumpInfoEl || !playerAreaEls.S || !playerHands.S || !trickAreaEl || !trickCardSlots.S || !controlsAreaEl || !controlsButtonsEl || !declaredAnnouncementsDisplayEl || !declaredAnnouncementsListEl || !messagesEl || !scoreBoardEl || !startGameBtn || !announcementModal || !modalAnnouncementsList || !modalConfirmBtn) {
+                 console.error("One or more critical DOM elements were not found!");
+                 alert("Грешка: Не всички елементи на играта са заредени правилно. Презаредете страницата.");
+                 return;
+             }
+
+            if (startGameBtn) {
+                 console.log("Attaching click listener to startGameBtn...");
+                 startGameBtn.addEventListener('click', () => {
+                     console.log("startGameBtn clicked! Calling startGame...");
+                     startGame();
+                 });
+                 console.log("Listener attached.");
+            } else { console.error("Start game button not found!"); setMessage("Грешка: Бутон 'Нова Игра' липсва!"); }
+
+            // Първоначално състояние...
+            setMessage("Добре дошли в Белот (Русе)! Натиснете 'Нова Игра'.");
+            updateScoreBoard(); renderAllHands(); clearCurrentPlayerHighlight();
+            updatePersistentTrumpInfo(); hideBiddingControls();
+            if(declaredAnnouncementsDisplayEl) declaredAnnouncementsDisplayEl.style.display = 'block';
+            if(declaredAnnouncementsListEl) declaredAnnouncementsListEl.innerHTML = 'Натиснете "Нова Игра"';
+            console.log("Initial setup complete.");
+        });
+
+    </script>
+
+</body>
+</html>
