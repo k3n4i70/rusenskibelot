@@ -685,37 +685,86 @@
             conn.on('error', err => { console.error(`PeerJS Conn Error with ${remotePeerId}:`,err); mpConnectionStatusEl.textContent=`Грешка връзка с ${remotePeerId}.`;});
         }
 
-        function assignPlayerPositionsAndStart() {
-            if (!isHost || !hostConnection || !hostConnection.open) {
+                function assignPlayerPositionsAndStart() {
+            // Добавяме проверка дали mpStartGameBtnEl е дефиниран и го взимаме, ако е нужно
+            if (!mpStartGameBtnEl) {
+                mpStartGameBtnEl = document.getElementById('mp-start-game-btn');
+                if (!mpStartGameBtnEl) {
+                    console.error("FATAL: mpStartGameBtnEl could not be found in assignPlayerPositionsAndStart!");
+                    alert("Критична грешка: Бутонът за старт на мултиплейър играта липсва.");
+                    return;
+                }
+            }
+
+            if (!isHost || !hostConnection || !hostConnection.open) { // Проверка за hostConnection
                 alert("Трябва да сте хост и да имате свързан гост, за да стартирате играта.");
                 return;
             }
             const hostSelectedPosition = document.querySelector('input[name="host-position"]:checked').value;
-            const guestPosition = hostSelectedPosition === 'S' ? 'N' : 'S'; // Гостът е срещу хоста
+            const guestPosition = hostSelectedPosition === 'S' ? 'N' : 'S';
 
             myPosition = hostSelectedPosition;
+            // Нулираме преди да зададем новите
+            playerPositions = { 'S': null, 'W': 'AI_W', 'N': null, 'E': 'AI_E' };
+            playerPeerIds = {}; // Нулираме и peerId съпоставянето
+
             playerPositions[hostSelectedPosition] = myPeerId;
-            playerPositions[guestPosition] = opponentPeerId; // opponentPeerId се задава в setupPeerDataEvents
+            playerPeerIds[myPeerId] = hostSelectedPosition; // Запазваме peerId -> позиция
+
+            if (opponentPeerId) { // Уверяваме се, че имаме peerId на опонента
+                playerPositions[guestPosition] = opponentPeerId;
+                playerPeerIds[opponentPeerId] = guestPosition; // Запазваме peerId -> позиция
+            } else {
+                console.error("assignPlayerPositionsAndStart: Opponent Peer ID is not set!");
+                alert("Грешка: ID-то на госта не е налично. Опитайте да се свържете отново.");
+                return;
+            }
+
 
             // Задаваме AI на останалите две позиции
-            const remainingPositions = PLAYERS.filter(p => p !== hostSelectedPosition && p !== guestPosition);
-            playerPositions[remainingPositions[0]] = 'AI_W_or_E1'; // Ще ги различим по-късно
-            playerPositions[remainingPositions[1]] = 'AI_W_or_E2';
-            // По-точно присвояване на AI спрямо хоста (ако хостът е Юг, AI са Запад и Изток)
-            if (hostSelectedPosition === 'S') {
-                playerPositions['W'] = playerPositions['W'] === opponentPeerId ? opponentPeerId : 'AI_W';
-                playerPositions['E'] = playerPositions['E'] === opponentPeerId ? opponentPeerId : 'AI_E';
-                playerNames['W'] = playerPositions['W'] === opponentPeerId ? opponentName : 'AI Запад';
-                playerNames['E'] = playerPositions['E'] === opponentPeerId ? opponentName : 'AI Изток';
-            } else { // Хостът е Север
-                playerPositions['W'] = playerPositions['W'] === opponentPeerId ? opponentPeerId : 'AI_W';
-                playerPositions['E'] = playerPositions['E'] === opponentPeerId ? opponentPeerId : 'AI_E';
-                playerNames['W'] = playerPositions['W'] === opponentPeerId ? opponentName : 'AI Запад';
-                playerNames['E'] = playerPositions['E'] === opponentPeerId ? opponentName : 'AI Изток';
+            const aiPositions = PLAYERS.filter(p => p !== hostSelectedPosition && p !== guestPosition);
+            if (aiPositions.length === 2) { // Трябва да са точно две
+                playerPositions[aiPositions[0]] = 'AI_1'; // Просто ги номерираме
+                playerPositions[aiPositions[1]] = 'AI_2';
+            } else {
+                console.error("Error assigning AI positions, remaining positions count is not 2:", aiPositions);
+                return;
             }
-            playerNames[hostSelectedPosition] = myName;
-            playerNames[guestPosition] = opponentName;
 
+            // Обновяваме имената на играчите според позициите
+            // playerNames вече трябва да съдържа имената по peerId { peerIdХост: "ИмеХост", peerIdГост: "ИмеГост" }
+            const finalPlayerNamesByPosition = {};
+            PLAYERS.forEach(pos => {
+                const assignedEntity = playerPositions[pos]; // Това е peerId или "AI_X"
+                if (assignedEntity === myPeerId) {
+                    finalPlayerNamesByPosition[pos] = myName;
+                } else if (assignedEntity === opponentPeerId) {
+                    finalPlayerNamesByPosition[pos] = opponentName;
+                } else if (assignedEntity === 'AI_1') {
+                    finalPlayerNamesByPosition[pos] = pos === 'W' ? 'AI Запад' : (pos === 'E' ? 'AI Изток' : `AI ${pos}`);
+                } else if (assignedEntity === 'AI_2') {
+                     finalPlayerNamesByPosition[pos] = pos === 'W' ? 'AI Запад' : (pos === 'E' ? 'AI Изток' : `AI ${pos}`);
+                     // Малко по-добро разпределение на имената на AI, ако позициите са W и E
+                     if (playerPositions['W'] === 'AI_1' && playerPositions['E'] === 'AI_2') {
+                        finalPlayerNamesByPosition['W'] = 'AI Запад';
+                        finalPlayerNamesByPosition['E'] = 'AI Изток';
+                     } else if (playerPositions['W'] === 'AI_2' && playerPositions['E'] === 'AI_1') {
+                        finalPlayerNamesByPosition['W'] = 'AI Запад';
+                        finalPlayerNamesByPosition['E'] = 'AI Изток';
+                     }
+                } else {
+                    finalPlayerNamesByPosition[pos] = `Играч (${pos})`;
+                }
+
+                 // Обновяваме имената в UI
+                 const nameEl = playerAreaEls[pos]?.querySelector('.player-name');
+                 if (nameEl) {
+                     let displayName = finalPlayerNamesByPosition[pos];
+                     if (pos === myPosition) displayName += " (Вие)";
+                     nameEl.textContent = displayName;
+                 }
+            });
+            playerNames = finalPlayerNamesByPosition; // Запазваме финалните имена по позиции
 
             console.log("Player positions determined:", playerPositions);
             console.log("Player names by position:", playerNames);
@@ -723,28 +772,29 @@
             if(gameContainerEl) gameContainerEl.style.display = 'flex';
             if(declaredAnnouncementsDisplayEl) declaredAnnouncementsDisplayEl.style.display = 'block';
             if(scoreBoardEl) scoreBoardEl.style.display = 'block';
-            document.querySelector('.connection-setup').style.display = 'none';
+            const connSetupEl = document.querySelector('.connection-setup');
+            if (connSetupEl) connSetupEl.style.display = 'none';
 
-            currentDealer = 'S'; // Хостът (Юг или Север) започва като дилър
+            currentDealer = 'S'; // Нека хостът (ако е S) или S по подразбиране да е първи дилър
 
             const gameStartData = {
                 type: "GAME_START_INFO",
-                playerPositions: playerPositions, // {S: peerIdHost, N: peerIdGuest, W: "AI_W", E: "AI_E"}
-                playerNames: playerNames,         // {S: "ИмеХост", N: "ИмеГост", W: "AI Запад", E: "AI Изток"}
+                playerPositions: playerPositions,
+                playerNames: playerNames,
                 currentDealer: currentDealer,
-                myAssignedPosition: guestPosition  // Казваме на госта коя е неговата позиция
+                myAssignedPosition: guestPosition
             };
-            // Изпращаме на госта
+
             if (hostConnection && hostConnection.open) {
                 hostConnection.send(gameStartData);
             }
             // Обработваме за хоста
             handleNetworkMessage({...gameStartData, myAssignedPosition: hostSelectedPosition}, myPeerId);
 
-            gameState = 'LOBBY'; // Преминаваме в лоби, startGame ще се извика
-            mpStartGameBtnEl.textContent = "Старт на Рунд"; // Бутонът вече ще стартира рундове
-            mpStartGameBtnEl.onclick = startGame; // Променяме функцията на бутона
-            startGame(); // Стартираме първия рунд
+            gameState = 'LOBBY';
+            mpStartGameBtnEl.textContent = "Старт на Рунд";
+            mpStartGameBtnEl.onclick = startGame;
+            startGame();
         }
 
         function sendGameData(data) { // Тази функция сега е за P2P между хост и гост
