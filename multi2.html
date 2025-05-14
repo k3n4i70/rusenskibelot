@@ -397,12 +397,12 @@
 
                  const roundSummary = messagesEl.textContent.split('|')[0].trim();
                  setMessage(`${roundSummary} | КРАЙ НА ИГРАТА! ${winner} печелят с ${teamScores['NS']} на ${teamScores['EW']}!`);
-                 if(startGameBtn) startGameBtn.disabled = false;
-
-             } else {
-                 currentDealer = getNextPlayer(currentDealer);
-                 setTimeout(startGame, 4000);
-             }
+                 //if(startGameBtn) startGameBtn.disabled = false;
+//
+//             } else {
+////                 currentDealer = getNextPlayer(currentDealer);
+ //                setTimeout(startGame, 4000);
+ //            }
          } // Край на endRound
         function wouldWinTrick(cT,cTP,p) { if(cTP.length===0)return!0; const hypo=[...cTP,{player:p,card:cT}]; let winP=findCurrentTrickWinnerHypothetical(hypo); return winP && winP.player===p; }
         function getPartner(p) { const i=PLAYERS.indexOf(p); return PLAYERS[(i+2)%4]; }
