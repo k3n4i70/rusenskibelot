@@ -783,6 +783,35 @@
                     updatePersistentTrumpInfo();
                     startPlayingPhase(); // Тази функция ще извика preparePlayerTurn
                     break;
+                    case "DEAL_CARDS_PHASE2": // Този case вече е покрит от START_PLAYING_PHASE, ако го изпращаме така
+                                        // но ако го оставим, трябва да прави същото
+                    hands = message.hands;
+                    potentialAnnouncements = message.potentialAnnouncements;
+                    gameState = 'PLAYING';
+                    sortHands(); renderAllHands();
+                    currentPlayer = getNextPlayer(currentDealer); // Трябва да се изпрати от хоста
+                    updatePersistentTrumpInfo();
+                    startPlayingPhase();
+                    break;
+
+                case "CARD_PLAYED":
+                    console.log(`Processing CARD_PLAYED for ${message.playerPos}, card: ${message.card?.id}. MyPos: ${myPosition}`);
+                    currentTrick = message.currentTrick;
+                    if (hands[message.playerPos] && message.card) {
+                        hands[message.playerPos] = hands[message.playerPos].filter(c => c.id !== message.card.id);
+                    }
+                    renderHand(message.playerPos);
+                    renderTrickArea();
+                    if (message.belotInfo) { /* ... обработка на белот ... */ }
+                    // Гостите чакат SET_CURRENT_PLAYER или TRICK_RESULT
+                    break;
+
+                case "SET_CURRENT_PLAYER": // Това е за смяна на ред ПО ВРЕМЕ НА ИГРА НА КАРТИ
+                    currentPlayer = message.nextPlayer;
+                    setMessage(`Игра: Ред ${getPlayerName(playerNames[currentPlayer] || currentPlayer)}.`);
+                    updateCurrentPlayerHighlight();
+                    preparePlayerTurn();
+                    break;
                 case "BID_UPDATE": // Всички получават това
                     currentBid = message.currentHighestBid; // Всички актуализират currentBid
                     biddingHistory = message.biddingHistory;
