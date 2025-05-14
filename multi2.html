@@ -192,6 +192,7 @@
         let gameMode = 'INIT_MP';
         let hostConnection = null;  // При госта: връзката към хоста; При хоста: връзката към ЕДИНСТВЕНИЯ гост
         let playerNames = {}; // { 'S': 'ИмеХост', 'N': 'ИмеГост' } (или W/E, зависи от избора)
+        let playerPositions = { 'S': null, 'W': 'AI_W', 'N': null, 'E': 'AI_E' };
         let playerPeerIds = {}; // { 'S': 'хостPeerId', 'N': 'гостPeerId' }
         let myName = "";
         let opponentName = "";
