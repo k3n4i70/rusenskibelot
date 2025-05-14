@@ -204,9 +204,73 @@
         function setMessage(msg) { console.log("MSG:", msg); if(messagesEl) messagesEl.textContent = msg; else console.warn("setMessage called before messagesEl assigned!"); }
         function updateScoreBoard() { if(scoreBoardEl) scoreBoardEl.textContent = `Резултат: Ние (С/Ю): ${teamScores['NS']} - Те (И/З): ${teamScores['EW']}`; else console.warn("updateScoreBoard called before scoreBoardEl assigned!"); }
         function renderCard(card, isHidden = false, isPlayableCard = false) { if (!card && isHidden) return `<div class="card hidden"></div>`; if (!card || !card.suit || !card.rank || !card.id) { console.error(`renderCard Error: Invalid card!`, card); return '<div class="card error">?</div>'; } const suitKey = Object.keys(SUITS).find(key => SUITS[key] === card.suit); if (!suitKey) { console.error(`renderCard Error: Invalid suit "${card.suit}"`); return '<div class="card error">?</div>'; } const suitClass = suitKey.toLowerCase(); const playableClass = isPlayableCard ? ' playable' : ''; return `<div class="card ${suitClass}${playableClass}" data-card-id="${card.id}"><span class="rank">${card.rank}</span><span class="suit">${card.suit}</span></div>`; }
-        function renderHand(playerPos) { const handEl = playerHands[playerPos]; if (!handEl) { console.error(`renderHand Error: El not found for ${playerPos}`); return; } const cards = hands[playerPos]; handEl.innerHTML = ''; if (!cards) { console.warn(`renderHand: No cards array for player at pos ${playerPos}.`); return; } if (cards.length === 0 && gameState !== 'INIT' && gameState !== 'LOBBY') { return; } const isMyHand = playerPos === myPosition; if (!isMyHand && gameState !== 'GAME_OVER') { for (let i = 0; i < cards.length; i++) handEl.innerHTML += renderCard(null, true); } else { const canPlayNow = gameState === 'PLAYING' && currentPlayer === playerPos && playerPos === myPosition;
-console.log(`renderHand for ${playerPos}. MyPos: ${myPosition}. CurrentPlayer: ${currentPlayer}. gameState: ${gameState}. Calculated canPlayNow: ${canPlayNow}`); cards.forEach((card, index) => { try { if (!card || !card.id) { console.error(`renderHand Error: Invalid card at index ${index} for ${playerPos}:`, card); cardsHtml += '<div class="card error">!</div>'; return; } let playable = false; if (canPlayNow && gameState === 'PLAYING' && currentTrick !== undefined) { playable = isPlayable(playerPos, card); } cardsHtml += renderCard(card, false, playable); } catch (e) { console.error(`Error rendering card ${card?.id} for ${playerPos}:`, e); cardsHtml += '<div class="card error">E</div>'; } }); handEl.innerHTML = cardsHtml; if (canPlayNow) { handEl.querySelectorAll('.card.playable').forEach(cardEl => { if (!cardEl.onclick) { cardEl.addEventListener('click', () => { handlePlayCard(myPosition, cardEl.dataset.cardId); }); } }); } } }
-        function renderAllHands() { PLAYERS.forEach(playerPos => renderHand(playerPos)); }
+                function renderHand(playerPos) {
+            const handEl = playerHands[playerPos];
+            if (!handEl) {
+                console.error(`renderHand Error: El not found for ${playerPos}`);
+                return;
+            }
+            const cards = hands[playerPos]; // Вземаме картите за дадената ПОЗИЦИЯ
+            // console.log(`renderHand for ${playerPos}. Card count: ${cards?.length}. MyPos: ${myPosition}. CurrentPlayer: ${currentPlayer}`);
+            handEl.innerHTML = ''; // Изчистваме преди рендиране
+
+            if (!cards) {
+                console.warn(`renderHand: No cards array found for player at pos ${playerPos}.`);
+                return;
+            }
+            if (cards.length === 0 && gameState !== 'INIT' && gameState !== 'LOBBY' && gameState !== 'DEALING') { // Добавено gameState !== 'DEALING'
+                // console.log(`renderHand: Player ${playerPos} has 0 cards (and not init/lobby/dealing). Rendering empty.`);
+                return;
+            }
+
+            const isMyHand = playerPos === myPosition;
+
+            if (!isMyHand && gameState !== 'GAME_OVER') {
+                // Рендираме скрити карти за други играчи
+                let hiddenCardsHtml = '';
+                for (let i = 0; i < cards.length; i++) { // Използваме cards.length, за да знаем колко скрити да покажем
+                    hiddenCardsHtml += renderCard(null, true);
+                }
+                handEl.innerHTML = hiddenCardsHtml;
+            } else {
+                // Рендираме видими карти за моя играч или в края на играта
+                const canPlayNow = gameState === 'PLAYING' && currentPlayer === playerPos && isMyHand;
+                // console.log(`renderHand for ${playerPos}. MyPos: ${myPosition}. CurrentPlayer: ${currentPlayer}. gameState: ${gameState}. Calculated canPlayNow: ${canPlayNow}`);
+
+                let cardsHtml = ''; // <--- ВАЖНО: ДЕФИНИЦИЯТА ТРЯБВА ДА Е ТУК
+                cards.forEach((card, index) => {
+                    try {
+                         if (!card || !card.id) { // Проверка за валидност на картата
+                             console.error(`renderHand Error: Invalid card data at index ${index} for player ${playerPos}:`, card);
+                             cardsHtml += '<div class="card error">!</div>'; // Добавяме карта-грешка
+                             return; // Пропусни тази карта в forEach
+                         }
+                         let playable = false;
+                         if (canPlayNow && gameState === 'PLAYING' && currentTrick !== undefined) {
+                             playable = isPlayable(playerPos, card);
+                         }
+                         cardsHtml += renderCard(card, false, playable);
+                    } catch (e) {
+                         console.error(`Error rendering card ${card?.id} for player ${playerPos}:`, e);
+                         cardsHtml += '<div class="card error">E</div>'; // Друг вид грешка
+                    }
+                });
+                handEl.innerHTML = cardsHtml; // Поставяме целия HTML наведнъж
+
+                // Добавяне на event listeners след като HTML е генериран
+                 if (canPlayNow) {
+                     handEl.querySelectorAll('.card.playable').forEach(cardEl => {
+                         // Премахваме стари слушатели, като клонираме и заменим елемента
+                         const oldEl = cardEl;
+                         const newEl = oldEl.cloneNode(true);
+                         oldEl.parentNode.replaceChild(newEl, oldEl);
+                         newEl.addEventListener('click', () => {
+                             handlePlayCard(myPosition, newEl.dataset.cardId); // Изпращаме НАШАТА позиция
+                         });
+                     });
+                 }
+             }
+        }
         function renderTrickArea() { clearTrickArea(); currentTrick.forEach(play => { const slot = trickCardSlots[play.player]; if (slot) { try { const cardElString = renderCard(play.card); const tempDiv = document.createElement('div'); tempDiv.innerHTML = cardElString.trim(); const cardEl = tempDiv.firstChild; if(cardEl) slot.appendChild(cardEl); else console.error("renderTrickArea: Failed to create card el"); } catch (e) { console.error(`Error rendering trick card for ${play.player}:`, e); } } else { console.error("renderTrickArea Error: No slot for:", play.player); } }); }
         function clearTrickArea() { PLAYERS.forEach(p => { if(trickCardSlots && trickCardSlots[p]) trickCardSlots[p].innerHTML=''; }); }
         function hideBiddingControls() { if(controlsAreaEl) controlsAreaEl.classList.remove('visible'); if(controlsButtonsEl) controlsButtonsEl.innerHTML = ''; }
