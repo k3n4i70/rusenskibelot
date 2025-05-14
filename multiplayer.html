@@ -439,18 +439,25 @@
         function allowCardPlay(playerPos){if(playerPos===myPosition){console.log(`Allowing card play for ME (${myPosition})`);updatePlayableCards();}else{console.log(`Not my turn (${currentPlayer}) or not my pos (${myPosition}) to play.`);}}
         function processPlayedCard(playerPos, cardId) { console.log(`HOST processPlayedCard for player: ${playerPos}, card: ${cardId}. Current player: ${currentPlayer}`); if (playerPos !== currentPlayer || gameState !== 'PLAYING') { console.warn("processPlayedCard: Not current player or not playing state."); return; } const cardToPlay = hands[playerPos]?.find(c => c.id === cardId); if (!cardToPlay) { console.error("processPlayedCard: Card not found!"); return; } hands[playerPos] = hands[playerPos].filter(c => c.id !== cardId); currentTrick.push({ player: playerPos, card: cardToPlay }); let belotInfo = null; if (trumpSuit && trumpSuit !== 'NO_TRUMP' && trumpSuit !== 'PASS' && belotStatus[playerPos].hasKQ && !belotStatus[playerPos].declared) { const trumpSuitSymbol = SUITS[trumpSuit]; if (cardToPlay.suit === trumpSuitSymbol && (cardToPlay.rank === 'K' || cardToPlay.rank === 'Q')) { const belotAnn = potentialAnnouncements[playerPos]?.find(a => a.type === 'BELOT'); if (belotAnn) { belotStatus[playerPos].declared = true; const belotMessage = `${getPlayerName(playerNames[playerPos] || playerPos)} обявява БЕЛОТ!`; if (!declaredAnnouncements[playerPos].some(a => a.type === 'BELOT')) { declaredAnnouncements[playerPos].push(belotAnn); } belotInfo = { playerPos: playerPos, message: belotMessage, announcements: declaredAnnouncements[playerPos] }; } } } if (isHost) { broadcastToAll({ type: "CARD_PLAYED", playerPos: playerPos, card: cardToPlay, currentTrick: currentTrick, belotInfo: belotInfo }); determineNextActionAfterPlay(); } else if (gameMode === 'LOCAL') { renderHand(playerPos); renderTrickArea(); if (belotInfo) { updateDeclaredAnnouncementsDisplay(); setMessage(belotInfo.message); } determineNextActionAfterPlay(); } }
         function handlePlayCard(playerPos_ShouldBeMyPosition, cardId) { console.log(`handlePlayCard CLICK by ME (${myPosition}), cardId: ${cardId}. CurrentPlayer: ${currentPlayer}`); if (myPosition !== currentPlayer || gameState !== 'PLAYING') { console.warn("handlePlayCard: Not my turn or not playing state."); return; } if (trickHistory.length === 0 && !playerDeclaredFlags[myPosition]) { setMessage("Моля, първо потвърдете анонсите си."); if (announcementModal && announcementModal.style.display === 'block') { return; } } const cardToPlay = hands[myPosition]?.find(c => c.id === cardId); if (!cardToPlay) { console.error("handlePlayCard: Card not found in my hand!"); return; } if (!isPlayable(myPosition, cardToPlay)) { setMessage("Невалиден ход!"); console.warn("handlePlayCard: Card is not playable."); return; } if (gameMode.startsWith("MULTIPLAYER")) { if (isHost) { console.log("Host initiating card play for self:", cardToPlay.id); processPlayedCard(myPosition, cardId); } else { console.log("Guest playing card, sending to host:", cardToPlay.id); sendToHost({ type: "PLAY_CARD", cardId: cardId, playerPos: myPosition }); hideBiddingControls(); setMessage("Изпратена карта. Чакане..."); } } else { console.log("Local game, playing card:", cardToPlay.id); processPlayedCard(myPosition, cardId); } }
-        // --- Коригирана determineNextActionAfterPlay (изпълнява се САМО от хоста или в локална игра) (v7.3) ---
+        // --- КОРИГИРАНА determineNextActionAfterPlay (САМО за хост/локална игра) (v7.4) ---
         function determineNextActionAfterPlay() {
             console.log("HOST/LOCAL: determineNextActionAfterPlay. Trick length:", currentTrick.length);
             if (currentTrick.length === 4) {
+                // Взятката е пълна, хостът определя победителя
                 determineTrickWinner(); // Тази функция ще изпрати TRICK_RESULT
+                                        // и ако не е последна взятка, determineTrickWinner (чрез setTimeout)
+                                        // трябва да инициира следващия SET_CURRENT_PLAYER
             } else {
-                const newCurrentPlayer = getNextPlayer(currentPlayer); // Хостът/Локалната игра сменя реда
-                console.log(`HOST/LOCAL: New current player is ${newCurrentPlayer}`);
+                // Взятката не е пълна, преминаваме към следващия играч
+                const newCurrentPlayer = getNextPlayer(currentPlayer);
                 if (isHost) {
+                    // Хостът веднага актуализира своя currentPlayer И изпраща на всички
+                    currentPlayer = newCurrentPlayer;
                     broadcastToAll({ type: "SET_CURRENT_PLAYER", nextPlayer: newCurrentPlayer });
+                    // Хостът също извиква preparePlayerTurn за себе си, ако е негов ред
+                    // Това ще стане, когато получи собственото си SET_CURRENT_PLAYER съобщение
                 } else if (gameMode === 'LOCAL') {
-                    currentPlayer = newCurrentPlayer; // Актуализираме локално
+                    currentPlayer = newCurrentPlayer;
                     setMessage(`Игра: Ред ${getPlayerName(playerNames[currentPlayer] || currentPlayer)}.`);
                     updateCurrentPlayerHighlight();
                     preparePlayerTurn();
@@ -960,21 +967,29 @@
     updateCurrentPlayerHighlight();
     preparePlayerTurn(); // Това ще извика allowCardPlay, което ще извика updatePlayableCards
     break;
-                case "TRICK_RESULT":
-                    roundScores = message.roundScores;
+                case "TRICK_RESULT": // Всички получават това
+                    roundScores = message.roundScores; // Актуализираме точките
+                    // Показваме кой е спечелил взятката
                     setMessage(`${getPlayerName(playerNames[message.winner] || message.winner)} печели с ${cardToString(message.winningCard)}. Точки: ${message.points}${message.isLastTrick?' (+10)':''}`);
-                    trickHistory.push({winner:message.winner, trick:currentTrick, points:message.points});
-                    currentTrick = [];
+                    // Показваме взятката, която току-що е приключила (ако е изпратена)
+                    if (message.currentTrickForDisplay) {
+                        currentTrick = message.currentTrickForDisplay; // За да се види за малко
+                        renderTrickArea();
+                    }
+                    trickHistory.push({winner:message.winner, trick: message.currentTrickForDisplay || [], points:message.points}); // Запазваме историята
+
                     setTimeout(()=>{
-                        clearTrickArea();
-                        if(message.isLastTrick){ if(isHost) endRound(); }
-                        else {
-                            // Хостът вече трябва да е изпратил SET_CURRENT_PLAYER (победителят от взятката)
-                            // в рамките на своята determineNextActionAfterPlay -> determineTrickWinner -> (ако не е край на рунд) -> moveToNextPlayerInTrick (грешка, трябва да е startPlayingPhase)
-                            // или по-скоро determineTrickWinner изпраща кой е следващия на ход
-                            if (isHost) {
-                                // Тази логика вече е в determineNextActionAfterPlay -> determineTrickWinner
-                            }
+                        clearTrickArea(); // Изчистваме визуално масата
+                        currentTrick = [];    // Нулираме данните за текущата взятка **при всички клиенти**
+
+                        if(message.isLastTrick){
+                             if(isHost) endRound(); // Само хостът изчислява края на рунда
+                             // Гостите чакат ROUND_END_INFO
+                        } else {
+                            // Хостът вече трябва да е изпратил SET_CURRENT_PLAYER с победителя от взятката
+                            // Това ще се случи в неговия determineNextActionAfterPlay -> determineTrickWinner -> (ако не е край) -> и там ще изпрати SET_CURRENT_PLAYER
+                            // Гостите просто чакат това съобщение.
+                            // Ако съм хост, вече съм изпратил SET_CURRENT_PLAYER в determineNextActionAfterPlay (ако не е последна взятка)
                         }
                     }, 1800);
                     break;
