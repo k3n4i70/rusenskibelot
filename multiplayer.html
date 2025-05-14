@@ -229,8 +229,97 @@
         function dealFinalCards() { console.log("Dealing final cards..."); if (isHost || gameMode === 'LOCAL') {setMessage('Финално раздаване...'); gameState='DEALING_FINAL'; let order=getPlayerOrderStartingFrom(getNextPlayer(currentDealer)); for(let i=0;i<3;i++){for(const p of order){if(deck.length>0){const c=deck.pop();if(c)hands[p].push(c);else console.warn("Popped undef (final)!");}else{console.warn("Deck empty (final)!");break;}}} sortHands(); detectAllAnnouncements(); const handsData={}; PLAYERS.forEach(pos=>handsData[pos]=hands[pos]); if(gameMode==='MULTIPLAYER_HOST'){broadcastToAll({type:"DEAL_CARDS_PHASE2",hands:handsData,potentialAnnouncements:potentialAnnouncements});} else {renderAllHands(); gameState='PLAYING'; currentPlayer=getNextPlayer(currentDealer); startPlayingPhase();}}}
         function sortHands() { const sO=[SUITS.CLUBS,SUITS.DIAMONDS,SUITS.HEARTS,SUITS.SPADES]; for(const p of PLAYERS){if(!hands[p])continue; hands[p].sort((a,b)=>{if(!a||!b)return 0; const sc=sO.indexOf(a.suit)-sO.indexOf(b.suit); if(sc!==0)return sc; const rvA=getRankValue(a,!1),rvB=getRankValue(b,!1); return rvA-rvB; });} }
         function startBidding() { currentPlayer=getNextPlayer(currentDealer); console.log("Bidding starts. Player:",currentPlayer,"(My pos:",myPosition,")"); setMessage(`Наддаване: Ред на ${getPlayerName(playerNames[currentPlayer]||currentPlayer)}`); if(persistentTrumpInfoEl) persistentTrumpInfoEl.textContent="Наддаване..."; biddingHistory=[]; updateCurrentPlayerHighlight(); updateBiddingControls();}
-        function handleBid(playerPos,bid){if(playerPos!==currentPlayer||gameState!=='BIDDING'){console.warn(`Invalid bid by ${playerPos}. Current: ${currentPlayer}`);return;} console.log(`${getPlayerName(playerNames[playerPos]||playerPos)} bids: ${BID_NAMES[bid]}`); if(gameMode.startsWith("MULTIPLAYER")&&playerPos===myPosition&&!isHost){sendToHost({type:"PLAYER_BID",bid:bid}); hideBiddingControls(); setMessage("Изпратено наддаване. Чакане..."); return;} let validBid=!1; biddingHistory.push({player:playerPos,bid:bid}); const cL=BIDS.indexOf(currentBid.bid),nL=BIDS.indexOf(bid); if(bid==='PASS'){validBid=!0;}else{if(nL>cL){currentBid={player:playerPos,bid:bid,level:nL};validBid=!0;}else{setMessage("Невалидно наддаване.");if(playerPos===myPosition)updateBiddingControls();return;}} if(validBid){if(isHost){broadcastToAll({type:"BID_UPDATE",biddingPlayer:playerPos,bidMade:bid,currentHighestBid:currentBid,biddingHistory:biddingHistory});} if(bid!=='PASS'&& (isHost || gameMode === 'LOCAL')) updatePersistentTrumpInfo(); if(checkBiddingEnd()){if(isHost)broadcastToAll({type:"BIDDING_END",finalBid:currentBid}); finalizeBidding();}else{moveToNextBidder();}}}
-        function moveToNextBidder(){currentPlayer=getNextPlayer(currentPlayer);console.log("Next bidder:",currentPlayer);if(isHost){broadcastToAll({type:"SET_CURRENT_PLAYER",nextPlayer:currentPlayer});} else if (gameMode === 'LOCAL') { setMessage(`Наддаване: Ред на ${getPlayerName(playerNames[currentPlayer]||currentPlayer)}`);updateCurrentPlayerHighlight();updateBiddingControls();} }
+        // --- Корекция в handleBid (v7.3) ---
+        function handleBid(playerPos, bid) {
+            // Тази функция се извиква от:
+            // 1. Локален клик, ако gameMode === 'LOCAL'
+            // 2. Локален клик, ако isHost && playerPos === myPosition
+            // 3. От handleNetworkMessage, ако isHost и е получен PLAYER_BID от гост
+            console.log(`handleBid: Pos=${playerPos}, Bid=${bid}, CurrentPlayer=${currentPlayer}, MyPos=${myPosition}, IsHost=${isHost}`);
+
+            if (playerPos !== currentPlayer || gameState !== 'BIDDING') {
+                console.warn(`handleBid: Invalid bid by ${playerPos}. Current: ${currentPlayer}, State: ${gameState}`);
+                return;
+            }
+
+            // Ако е гост, той вече е изпратил PLAYER_BID и чака.
+            // Тази функция при госта се вика само при локална игра (която сме премахнали за момента)
+            // или ако има грешка в логиката.
+            if (gameMode.startsWith("MULTIPLAYER") && playerPos === myPosition && !isHost) {
+                sendToHost({ type: "PLAYER_BID", bid: bid }); // playerPos се подразбира, че е myPosition
+                hideBiddingControls();
+                setMessage("Изпратено наддаване. Чакане...");
+                return;
+            }
+
+            // Оттук нататък кодът се изпълнява само от ХОСТА (за себе си или за гост) или в ЛОКАЛНА игра.
+            console.log(`${getPlayerName(playerNames[playerPos] || playerPos)} наддава: ${BID_NAMES[bid]}`);
+
+            let validBidProcessed = false;
+            const originalCurrentBidForLog = JSON.parse(JSON.stringify(currentBid)); // За логване
+
+            if (bid === 'PASS') {
+                biddingHistory.push({ player: playerPos, bid: bid });
+                validBidProcessed = true;
+            } else {
+                const currentLevel = BIDS.indexOf(currentBid.bid);
+                const newLevel = BIDS.indexOf(bid);
+                if (newLevel > currentLevel) {
+                    currentBid = { player: playerPos, bid: bid, level: newLevel };
+                    biddingHistory.push({ player: playerPos, bid: bid });
+                    validBidProcessed = true;
+                } else {
+                    setMessage("Невалидно наддаване (трябва да е по-високо).");
+                    // Ако хостът играе за себе си или е локална игра, и е негов ред, показваме пак контролите
+                    if ((isHost && playerPos === myPosition) || gameMode === 'LOCAL') {
+                        updateBiddingControls();
+                    }
+                    return; // Невалиден бид, не продължаваме
+                }
+            }
+
+            if (validBidProcessed) {
+                if (isHost) {
+                    // Хостът изпраща актуализация за направения бид
+                    broadcastToAll({
+                        type: "BID_UPDATE",
+                        biddingPlayer: playerPos,
+                        bidMade: bid,
+                        currentHighestBid: currentBid, // Изпращаме новото currentBid
+                        biddingHistory: biddingHistory
+                    });
+                } else if (gameMode === 'LOCAL') {
+                    // Локално обновяване на UI (ако е нужно, BID_UPDATE би го направил и за хоста)
+                    if (bid !== 'PASS') updatePersistentTrumpInfo();
+                     // renderAllHands(); // Не е нужно, само UI за наддаване
+                }
+
+                // Проверяваме дали наддаването е приключило
+                if (checkBiddingEnd()) {
+                    if (isHost) {
+                        broadcastToAll({ type: "BIDDING_END", finalBid: currentBid });
+                    }
+                    finalizeBidding(); // И хостът, и локалната игра извикват това
+                } else {
+                    // Ако не е приключило, хостът/локалната игра определя следващия
+                    moveToNextBidder();
+                }
+            }
+        }
+        // --- Корекция в moveToNextBidder (изпълнява се САМО от хоста или в локална игра) ---
+        function moveToNextBidder() {
+            currentPlayer = getNextPlayer(currentPlayer); // Хостът/локалната игра сменя реда
+            console.log(`moveToNextBidder (Host/Local): New current player is ${currentPlayer}`);
+
+            if (isHost) {
+                broadcastToAll({ type: "SET_CURRENT_PLAYER_BID", nextPlayer: currentPlayer });
+            } else if (gameMode === 'LOCAL') {
+                // При локална игра, директно подготвяме хода
+                setMessage(`Наддаване: Ред на ${getPlayerName(playerNames[currentPlayer] || currentPlayer)}`);
+                updateCurrentPlayerHighlight();
+                updateBiddingControls(); // Това ще покаже бутоните за правилния играч
+            }
+        }
         function checkBiddingEnd() { if(biddingHistory.length<4)return!1; const l4=biddingHistory.slice(-4); if(l4.every(b=>b.bid==='PASS')){if(biddingHistory.length===4||(biddingHistory[biddingHistory.length-5]?.bid==='PASS'))return!0;} if(currentBid.bid!=='PASS'&&biddingHistory.length>=3){return biddingHistory.slice(-3).every(b=>b.bid==='PASS');} return!1;}
         function finalizeBidding() {hideBiddingControls();clearCurrentPlayerHighlight();if(currentBid.bid==='PASS'){setMessage("Всички пасуваха! Прераздаване...");gameState='INIT';if(isHost||gameMode==='LOCAL')setTimeout(startGame,2500);}else{trumpSuit=currentBid.bid;setMessage(`${getPlayerName(playerNames[currentBid.player]||currentBid.player)} спечели с ${BID_NAMES[trumpSuit]}! Финално раздаване...`);updatePersistentTrumpInfo();if(isHost||gameMode==='LOCAL')setTimeout(dealFinalCards,1500);}}
         function detectAllAnnouncements() { potentialAnnouncements={S:[],W:[],N:[],E:[]}; belotStatus={S:{hasKQ:!1,declared:!1},W:{hasKQ:!1,declared:!1},N:{hasKQ:!1,declared:!1},E:{hasKQ:!1,declared:!1}}; PLAYERS.forEach(p=>{const h=hands[p]; if(!h) return; const seq=findSequences(h); const kar=findKares(h,trumpSuit); let pot= [...seq,...kar]; if(trumpSuit&&trumpSuit!=='NO_TRUMP'&&trumpSuit!=='PASS'){const bel=findBelot(h); if(bel){pot.push(bel);belotStatus[p].hasKQ=!0;}else{belotStatus[p].hasKQ=!1;}}else{belotStatus[p].hasKQ=!1;} potentialAnnouncements[p]=pot;}); console.log("Potential Anns:", potentialAnnouncements); }
@@ -582,14 +671,46 @@
                     break;
                 case "DEAL_CARDS_PHASE1": hands = message.hands; currentDealer = message.dealer; gameState = 'BIDDING'; sortHands(); renderAllHands(); startBidding(); break;
                 case "DEAL_CARDS_PHASE2": hands = message.hands; potentialAnnouncements = message.potentialAnnouncements; gameState = 'PLAYING'; sortHands(); renderAllHands(); currentPlayer = getNextPlayer(currentDealer); updatePersistentTrumpInfo(); startPlayingPhase(); break;
-                case "PLAYER_BID": if (isHost) { const bidderPosition = playerPeerIds[fromPeerId]; if (bidderPosition && bidderPosition === currentPlayer) { handleBid(bidderPosition, message.bid); } else { console.warn("Host: BID from wrong player/unknown peerId."); } } break;
-                case "BID_UPDATE": currentBid = message.currentHighestBid; biddingHistory = message.biddingHistory; if (message.bidMade !== 'PASS') updatePersistentTrumpInfo(); setMessage(`${getPlayerName(playerNames[message.biddingPlayer] || message.biddingPlayer)} наддаде ${BID_NAMES[message.bidMade]}`); break;
-                case "NEXT_BIDDER": currentPlayer = message.nextPlayer; setMessage(`Наддаване: Ред на ${getPlayerName(playerNames[currentPlayer] || currentPlayer)}`); updateCurrentPlayerHighlight(); updateBiddingControls(); break; // Беше SET_CURRENT_PLAYER, върнато на NEXT_BIDDER за яснота
-                case "BIDDING_END": currentBid = message.finalBid; finalizeBidding(); break;
+                case "PLAYER_BID": // Само хостът получава това
+                    if (isHost) {
+                        const bidderPosition = playerPeerIds[fromPeerId];
+                        if (bidderPosition && bidderPosition === currentPlayer) {
+                            console.log(`Host processing PLAYER_BID from ${getPlayerName(playerNames[bidderPosition] || bidderPosition)} (${bidderPosition}), bid: ${message.bid}`);
+                            handleBid(bidderPosition, message.bid); // Хостът обработва наддаването
+                        } else {
+                            console.warn("Host: BID from wrong player/unknown peerId or not their turn. Expected:", currentPlayer, "Got from:", bidderPosition);
+                        }
+                    }
+                    break;
+                case "BID_UPDATE": // Всички получават това
+                    currentBid = message.currentHighestBid; // Всички актуализират currentBid
+                    biddingHistory = message.biddingHistory;
+                    if (message.bidMade !== 'PASS') updatePersistentTrumpInfo(); // UI за коз
+                    setMessage(`${getPlayerName(playerNames[message.biddingPlayer] || message.biddingPlayer)} наддаде ${BID_NAMES[message.bidMade]}`);
+                    // НЕ сменяме currentPlayer тук, чакаме SET_CURRENT_PLAYER_BID
+                    break;
+                case "SET_CURRENT_PLAYER_BID": // Преименувано от NEXT_BIDDER за наддаване
+                    currentPlayer = message.nextPlayer;
+                    setMessage(`Наддаване: Ред на ${getPlayerName(playerNames[currentPlayer] || currentPlayer)}`);
+                    updateCurrentPlayerHighlight();
+                    updateBiddingControls(); // Това ще покаже бутоните, АКО currentPlayer === myPosition
+                    break;
+                case "BIDDING_END": // Всички получават това
+                    currentBid = message.finalBid; // Всички актуализират финалния бид
+                    finalizeBidding(); // Всички извикват finalizeBidding (хостът ще извика dealFinalCards)
+                    break;
                 case "PLAYER_ANNOUNCEMENTS": if (isHost) { const announcerPosition = message.playerPos; declaredAnnouncements[announcerPosition] = message.announcements; updateDeclaredAnnouncementsDisplay(); broadcastToGuests({type: "ANNOUNCEMENT_DECLARED",playerPos: announcerPosition,announcements: message.announcements, belotDeclaredMessage: null}, playerPositions[announcerPosition]); if (announcerPosition === myPosition) { handleNetworkMessage({type: "ANNOUNCEMENT_DECLARED", playerPos: announcerPosition, announcements: message.announcements, belotDeclaredMessage: null}, myPeerId); } } break;
                 case "ANNOUNCEMENT_DECLARED": if (!(isHost && message.playerPos === myPosition && fromPeerId === myPeerId) ) { declaredAnnouncements[message.playerPos] = message.announcements; updateDeclaredAnnouncementsDisplay(); } if(message.belotDeclaredMessage) setMessage(message.belotDeclaredMessage); break;
-                case "PLAY_CARD": if (isHost) { const playerPosition = playerPeerIds[fromPeerId]; if (playerPosition && playerPosition === currentPlayer) { processPlayedCard(playerPosition, message.cardId); } else { console.warn("Host: PLAY_CARD from wrong player/unknown peerId."); } } break;
-                case "CARD_PLAYED":
+                case "PLAY_CARD": // Само хостът получава това
+                    if (isHost) {
+                        const playerPosition = playerPeerIds[fromPeerId];
+                        if (playerPosition && playerPosition === currentPlayer) {
+                            processPlayedCard(playerPosition, message.cardId);
+                        } else { console.warn("Host: PLAY_CARD from wrong player/unknown peerId or not their turn."); }
+                    }
+                    break;
+                case "CARD_PLAYED": // Всички получават това
+                    console.log(`Processing CARD_PLAYED for ${message.playerPos}, card: ${message.card?.id}. MyPos: ${myPosition}`);
                     currentTrick = message.currentTrick;
                     if (hands[message.playerPos] && message.card) { hands[message.playerPos] = hands[message.playerPos].filter(c => c.id !== message.card.id); }
                     renderHand(message.playerPos); renderTrickArea();
@@ -601,14 +722,32 @@
                             updateDeclaredAnnouncementsDisplay(); setMessage(message.belotInfo.message);
                         }
                     }
-                    // Преместено в processPlayedCard при хоста -> determineNextActionAfterPlay
+                    // Гостите чакат SET_CURRENT_PLAYER (преди беше NEXT_PLAYER_TRICK)
                     break;
                 case "SET_CURRENT_PLAYER": // Преименувано от NEXT_PLAYER_TRICK
                     currentPlayer = message.nextPlayer;
                     setMessage(`Игра: Ред ${getPlayerName(playerNames[currentPlayer] || currentPlayer)}.`);
-                    updateCurrentPlayerHighlight(); preparePlayerTurn();
+                    updateCurrentPlayerHighlight();
+                    preparePlayerTurn();
                     break;
-                case "TRICK_RESULT": roundScores = message.roundScores; setMessage(`${getPlayerName(playerNames[message.winner] || message.winner)} печели с ${cardToString(message.winningCard)}. Точки: ${message.points}${message.isLastTrick?' (+10)':''}`); trickHistory.push({winner:message.winner, trick:currentTrick, points:message.points}); currentTrick = []; setTimeout(()=>{ clearTrickArea(); if(message.isLastTrick){ if(isHost) endRound(); } else { /* Хостът ще изпрати SET_CURRENT_PLAYER */ } }, 1800); break;
+                case "TRICK_RESULT":
+                    roundScores = message.roundScores;
+                    setMessage(`${getPlayerName(playerNames[message.winner] || message.winner)} печели с ${cardToString(message.winningCard)}. Точки: ${message.points}${message.isLastTrick?' (+10)':''}`);
+                    trickHistory.push({winner:message.winner, trick:currentTrick, points:message.points});
+                    currentTrick = [];
+                    setTimeout(()=>{
+                        clearTrickArea();
+                        if(message.isLastTrick){ if(isHost) endRound(); }
+                        else {
+                            // Хостът вече трябва да е изпратил SET_CURRENT_PLAYER (победителят от взятката)
+                            // в рамките на своята determineNextActionAfterPlay -> determineTrickWinner -> (ако не е край на рунд) -> moveToNextPlayerInTrick (грешка, трябва да е startPlayingPhase)
+                            // или по-скоро determineTrickWinner изпраща кой е следващия на ход
+                            if (isHost) {
+                                // Тази логика вече е в determineNextActionAfterPlay -> determineTrickWinner
+                            }
+                        }
+                    }, 1800);
+                    break;
                 case "ROUND_END_INFO": if (!isHost) { teamScores=message.teamScores; updateScoreBoard(); setMessage(message.message); if(message.nextDealer){currentDealer=message.nextDealer; if(message.startNextRound){setMessage("Изчаква се хостът...");}}} break;
                 case "GAME_OVER_INFO": if (!isHost) { gameState='GAME_OVER'; teamScores=message.teamScores; updateScoreBoard(); setMessage(message.message); if(roleSelectionEl)roleSelectionEl.style.display='block'; if(hostPanelEl)hostPanelEl.style.display='none'; if(guestPanelEl)guestPanelEl.style.display='none'; if(gameContainerEl)gameContainerEl.style.display='none'; if(declaredAnnouncementsDisplayEl)declaredAnnouncementsDisplayEl.style.display='none'; if(scoreBoardEl)scoreBoardEl.style.display='none'; if(mpStartGameBtnEl)mpStartGameBtnEl.disabled=!0;} break;
                 case "PLAYER_LEFT": const leftPN=playerNames[playerPeerIds[message.peerId]]||message.peerId; alert(`Играч ${leftPN} напусна.`); if(isHost){const li=document.getElementById(`guest-${message.peerId}`);if(li)li.textContent+=" (Напусна)";if(mpStartGameBtnEl)mpStartGameBtnEl.disabled=!0;} if(gameMode.startsWith("MULTIPLAYER")){gameState='LOBBY';if(roleSelectionEl)roleSelectionEl.style.display='block';if(hostPanelEl)hostPanelEl.style.display='none';if(guestPanelEl)guestPanelEl.style.display='none';if(gameContainerEl)gameContainerEl.style.display='none';if(declaredAnnouncementsDisplayEl)declaredAnnouncementsDisplayEl.style.display='none';if(scoreBoardEl)scoreBoardEl.style.display='none';if(mpConnectionStatusEl)mpConnectionStatusEl.textContent="Играч напусна.";if(peer&&!isHost)peer.destroy();if(peer&&isHost&&connectedGuestsCount===0)peer.destroy();} break;
