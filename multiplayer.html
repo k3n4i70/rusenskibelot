@@ -226,7 +226,38 @@
         function getNextPlayer(p) { if (!p||PLAYERS.indexOf(p)===-1){console.error(`Invalid player "${p}"!`);return PLAYERS[0];} const i=PLAYERS.indexOf(p); return PLAYERS[(i+1)%4]; }
         function getPlayerOrderStartingFrom(sP) { if (!sP||PLAYERS.indexOf(sP)===-1){console.error(`Invalid startPlayer "${sP}"!`);return [...PLAYERS];} const i=PLAYERS.indexOf(sP); return [...PLAYERS.slice(i),...PLAYERS.slice(0,i)]; }
         function dealInitialCards() { console.log("dealInitialCards called. Dealer:", currentDealer, "GameMode:", gameMode); setMessage(`Раздава ${getPlayerName(playerNames[currentDealer] || currentDealer)}...`); gameState='DEALING'; hands={S:[],W:[],N:[],E:[]}; trickHistory=[]; currentTrick=[]; potentialAnnouncements={S:[],W:[],N:[],E:[]}; declaredAnnouncements={S:[],W:[],N:[],E:[]}; playerDeclaredFlags={S:!1,W:!1,N:!1,E:!1}; belotStatus={S:{hasKQ:!1,declared:!1},W:{hasKQ:!1,declared:!1},N:{hasKQ:!1,declared:!1},E:{hasKQ:!1,declared:!1}}; roundScores={NS:{points:0,announcements:0},EW:{points:0,announcements:0}}; trumpSuit=null; currentBid={player:null,bid:'PASS',level:-1}; biddingHistory=[]; clearTrickArea(); updatePersistentTrumpInfo(); hideBiddingControls(); if(declaredAnnouncementsListEl) declaredAnnouncementsListEl.innerHTML='Няма обявени анонси в този рунд.'; if (isHost || gameMode === 'LOCAL') { const nextP=getNextPlayer(currentDealer); let order=getPlayerOrderStartingFrom(nextP); if (!order||typeof order[Symbol.iterator]!=='function'){console.error("FATAL: playerOrder not iterable!", order); setMessage("Крит. грешка!"); return;} for(let i=0;i<3;i++){for(const p of order){if(deck.length>0){const c=deck.pop();if(c)hands[p].push(c);else console.warn("Popped undefined!");}else{console.warn("Deck empty (3)!");break;}}} for(let i=0;i<2;i++){for(const p of order){if(deck.length>0){const c=deck.pop();if(c)hands[p].push(c);else console.warn("Popped undefined!");}else{console.warn("Deck empty (2)!");break;}}} sortHands(); if (gameMode === 'MULTIPLAYER_HOST') { const handsData = {}; PLAYERS.forEach(pos => handsData[pos] = hands[pos]); broadcastToAll({ type: "DEAL_CARDS_PHASE1", hands: handsData, dealer: currentDealer }); } else { renderAllHands(); gameState='BIDDING'; startBidding(); } } }
-        function dealFinalCards() { console.log("Dealing final cards..."); if (isHost || gameMode === 'LOCAL') {setMessage('Финално раздаване...'); gameState='DEALING_FINAL'; let order=getPlayerOrderStartingFrom(getNextPlayer(currentDealer)); for(let i=0;i<3;i++){for(const p of order){if(deck.length>0){const c=deck.pop();if(c)hands[p].push(c);else console.warn("Popped undef (final)!");}else{console.warn("Deck empty (final)!");break;}}} sortHands(); detectAllAnnouncements(); const handsData={}; PLAYERS.forEach(pos=>handsData[pos]=hands[pos]); if(gameMode==='MULTIPLAYER_HOST'){broadcastToAll({type:"DEAL_CARDS_PHASE2",hands:handsData,potentialAnnouncements:potentialAnnouncements});} else {renderAllHands(); gameState='PLAYING'; currentPlayer=getNextPlayer(currentDealer); startPlayingPhase();}}}
+        // --- Коригирана dealFinalCards (v7.3) ---
+        function dealFinalCards() {
+            console.log("Dealing final cards... GameMode:", gameMode, "IsHost:", isHost);
+            if (isHost || gameMode === 'LOCAL') {
+                setMessage('Финално раздаване на карти...');
+                gameState = 'DEALING_FINAL'; // Все още сме във фаза раздаване
+                let order = getPlayerOrderStartingFrom(getNextPlayer(currentDealer));
+                for (let i = 0; i < 3; i++) { for (const p of order) { if (deck.length > 0) { const c = deck.pop(); if (c) hands[p].push(c); } else { console.warn("Deck empty final!"); break; } } }
+                sortHands();
+                detectAllAnnouncements();
+
+                const handsData = {};
+                PLAYERS.forEach(pos => handsData[pos] = hands[pos]);
+                const firstPlayerToPlay = getNextPlayer(currentDealer); // Кой започва играта на карти
+
+                if (gameMode === 'MULTIPLAYER_HOST') {
+                    broadcastToAll({
+                        type: "START_PLAYING_PHASE", // Ново съобщение
+                        hands: handsData,
+                        potentialAnnouncements: potentialAnnouncements,
+                        currentPlayer: firstPlayerToPlay, // Изпращаме кой е на ход
+                        trumpSuit: trumpSuit // Изпращаме и текущия коз
+                    });
+                } else { // LOCAL
+                    renderAllHands(); // Трябва да се извика, за да се видят всички карти преди игра
+                    gameState = 'PLAYING';
+                    currentPlayer = firstPlayerToPlay;
+                    updatePersistentTrumpInfo(); // Уверяваме се, че козът е показан
+                    startPlayingPhase(); // Локалната игра стартира веднага
+                }
+            }
+        }
         function sortHands() { const sO=[SUITS.CLUBS,SUITS.DIAMONDS,SUITS.HEARTS,SUITS.SPADES]; for(const p of PLAYERS){if(!hands[p])continue; hands[p].sort((a,b)=>{if(!a||!b)return 0; const sc=sO.indexOf(a.suit)-sO.indexOf(b.suit); if(sc!==0)return sc; const rvA=getRankValue(a,!1),rvB=getRankValue(b,!1); return rvA-rvB; });} }
         function startBidding() { currentPlayer=getNextPlayer(currentDealer); console.log("Bidding starts. Player:",currentPlayer,"(My pos:",myPosition,")"); setMessage(`Наддаване: Ред на ${getPlayerName(playerNames[currentPlayer]||currentPlayer)}`); if(persistentTrumpInfoEl) persistentTrumpInfoEl.textContent="Наддаване..."; biddingHistory=[]; updateCurrentPlayerHighlight(); updateBiddingControls();}
         // --- Корекция в handleBid (v7.3) ---
@@ -335,8 +366,67 @@
         function allowCardPlay(playerPos){if(playerPos===myPosition){console.log(`Allowing card play for ME (${myPosition})`);updatePlayableCards();}else{console.log(`Not my turn (${currentPlayer}) or not my pos (${myPosition}) to play.`);}}
         function processPlayedCard(playerPos, cardId) { console.log(`HOST processPlayedCard for player: ${playerPos}, card: ${cardId}. Current player: ${currentPlayer}`); if (playerPos !== currentPlayer || gameState !== 'PLAYING') { console.warn("processPlayedCard: Not current player or not playing state."); return; } const cardToPlay = hands[playerPos]?.find(c => c.id === cardId); if (!cardToPlay) { console.error("processPlayedCard: Card not found!"); return; } hands[playerPos] = hands[playerPos].filter(c => c.id !== cardId); currentTrick.push({ player: playerPos, card: cardToPlay }); let belotInfo = null; if (trumpSuit && trumpSuit !== 'NO_TRUMP' && trumpSuit !== 'PASS' && belotStatus[playerPos].hasKQ && !belotStatus[playerPos].declared) { const trumpSuitSymbol = SUITS[trumpSuit]; if (cardToPlay.suit === trumpSuitSymbol && (cardToPlay.rank === 'K' || cardToPlay.rank === 'Q')) { const belotAnn = potentialAnnouncements[playerPos]?.find(a => a.type === 'BELOT'); if (belotAnn) { belotStatus[playerPos].declared = true; const belotMessage = `${getPlayerName(playerNames[playerPos] || playerPos)} обявява БЕЛОТ!`; if (!declaredAnnouncements[playerPos].some(a => a.type === 'BELOT')) { declaredAnnouncements[playerPos].push(belotAnn); } belotInfo = { playerPos: playerPos, message: belotMessage, announcements: declaredAnnouncements[playerPos] }; } } } if (isHost) { broadcastToAll({ type: "CARD_PLAYED", playerPos: playerPos, card: cardToPlay, currentTrick: currentTrick, belotInfo: belotInfo }); determineNextActionAfterPlay(); } else if (gameMode === 'LOCAL') { renderHand(playerPos); renderTrickArea(); if (belotInfo) { updateDeclaredAnnouncementsDisplay(); setMessage(belotInfo.message); } determineNextActionAfterPlay(); } }
         function handlePlayCard(playerPos_ShouldBeMyPosition, cardId) { console.log(`handlePlayCard CLICK by ME (${myPosition}), cardId: ${cardId}. CurrentPlayer: ${currentPlayer}`); if (myPosition !== currentPlayer || gameState !== 'PLAYING') { console.warn("handlePlayCard: Not my turn or not playing state."); return; } if (trickHistory.length === 0 && !playerDeclaredFlags[myPosition]) { setMessage("Моля, първо потвърдете анонсите си."); if (announcementModal && announcementModal.style.display === 'block') { return; } } const cardToPlay = hands[myPosition]?.find(c => c.id === cardId); if (!cardToPlay) { console.error("handlePlayCard: Card not found in my hand!"); return; } if (!isPlayable(myPosition, cardToPlay)) { setMessage("Невалиден ход!"); console.warn("handlePlayCard: Card is not playable."); return; } if (gameMode.startsWith("MULTIPLAYER")) { if (isHost) { console.log("Host initiating card play for self:", cardToPlay.id); processPlayedCard(myPosition, cardId); } else { console.log("Guest playing card, sending to host:", cardToPlay.id); sendToHost({ type: "PLAY_CARD", cardId: cardId, playerPos: myPosition }); hideBiddingControls(); setMessage("Изпратена карта. Чакане..."); } } else { console.log("Local game, playing card:", cardToPlay.id); processPlayedCard(myPosition, cardId); } }
-        function determineNextActionAfterPlay() { console.log("HOST/LOCAL: determineNextActionAfterPlay. Trick length:", currentTrick.length); if (currentTrick.length === 4) { determineTrickWinner(); } else { currentPlayer = getNextPlayer(currentPlayer); console.log(`HOST/LOCAL: New current player is ${currentPlayer}`); if (isHost) { broadcastToAll({ type: "SET_CURRENT_PLAYER", nextPlayer: currentPlayer }); } else if (gameMode === 'LOCAL') { setMessage(`Игра: Ред ${getPlayerName(playerNames[currentPlayer] || currentPlayer)}.`); updateCurrentPlayerHighlight(); preparePlayerTurn(); } } }
-        function determineTrickWinner(){gameState='SCORING_TRICK';clearCurrentPlayerHighlight();setMessage('Изчисляване...');let winP=findCurrentTrickWinner();if(!winP){console.error("No trick winner!");winP=currentTrick[0];} const win=winP.player;let pts=0;currentTrick.forEach(pl=>pts+=getCardPoints(pl.card));const last=(hands.S?.length===0&&hands.W?.length===0&&hands.N?.length===0&&hands.E?.length===0);if(last)pts+=10;const winT=(win=='N'||win=='S')?'NS':'EW';roundScores[winT].points+=pts;if(isHost||gameMode==='LOCAL'){broadcastToAll({type:"TRICK_RESULT",winner:win,winningCard:winP.card,points:pts,isLastTrick:last,roundScores:roundScores});} else { /* Гостът не прави нищо, чака TRICK_RESULT */ } trickHistory.push({winner:win,trick:[...currentTrick],points:pts});}
+        // --- Коригирана determineNextActionAfterPlay (изпълнява се САМО от хоста или в локална игра) (v7.3) ---
+        function determineNextActionAfterPlay() {
+            console.log("HOST/LOCAL: determineNextActionAfterPlay. Trick length:", currentTrick.length);
+            if (currentTrick.length === 4) {
+                determineTrickWinner(); // Тази функция ще изпрати TRICK_RESULT
+            } else {
+                const newCurrentPlayer = getNextPlayer(currentPlayer); // Хостът/Локалната игра сменя реда
+                console.log(`HOST/LOCAL: New current player is ${newCurrentPlayer}`);
+                if (isHost) {
+                    broadcastToAll({ type: "SET_CURRENT_PLAYER", nextPlayer: newCurrentPlayer });
+                } else if (gameMode === 'LOCAL') {
+                    currentPlayer = newCurrentPlayer; // Актуализираме локално
+                    setMessage(`Игра: Ред ${getPlayerName(playerNames[currentPlayer] || currentPlayer)}.`);
+                    updateCurrentPlayerHighlight();
+                    preparePlayerTurn();
+                }
+            }
+        }
+        // --- Коригирана determineTrickWinner (изпълнява се САМО от хоста или в локална игра) (v7.3) ---
+        function determineTrickWinner() {
+            gameState = 'SCORING_TRICK';
+            clearCurrentPlayerHighlight();
+            setMessage('Изчисляване на взятката...');
+            let winningPlay = findCurrentTrickWinner();
+            if (!winningPlay) { console.error("No trick winner!"); winningPlay = currentTrick[0]; }
+            const winnerOfTrick = winningPlay.player;
+            let pointsForTrick = 0;
+            currentTrick.forEach(play => pointsForTrick += getCardPoints(play.card));
+            const isLastTrickOfRound = (hands.S?.length === 0 && hands.W?.length === 0 && hands.N?.length === 0 && hands.E?.length === 0);
+            if (isLastTrickOfRound) pointsForTrick += 10;
+
+            const winningTeam = (winnerOfTrick === 'N' || winnerOfTrick === 'S') ? 'NS' : 'EW';
+            roundScores[winningTeam].points += pointsForTrick;
+            trickHistory.push({ winner: winnerOfTrick, trick: [...currentTrick], points: pointsForTrick });
+
+            if (isHost) {
+                broadcastToAll({
+                    type: "TRICK_RESULT",
+                    winner: winnerOfTrick,
+                    winningCard: winningPlay.card,
+                    points: pointsForTrick,
+                    isLastTrick: isLastTrickOfRound,
+                    roundScores: roundScores // Изпращаме актуализираните точки от рунда
+                });
+            } else if (gameMode === 'LOCAL') {
+                // Локално обновяване на съобщението
+                 setMessage(`${getPlayerName(playerNames[winnerOfTrick] || winnerOfTrick)} печели с ${cardToString(winningPlay.card)}. Точки: ${pointsForTrick}${isLastTrickOfRound ? ' (+10)' : ''}`);
+                // Локално изчакване и след това следващо действие
+                setTimeout(() => {
+                    clearTrickArea();
+                    currentTrick = []; // Изчистваме тук за локалната игра
+                    if (isLastTrickOfRound) {
+                        endRound();
+                    } else {
+                        currentPlayer = winnerOfTrick; // Победителят започва
+                        gameState = 'PLAYING';
+                        startPlayingPhase(); // Това ще извика preparePlayerTurn
+                    }
+                }, 1800);
+            }
+        }
         function endRound() {
             gameState = 'END_ROUND';
             let initialMessage = 'Край на рунда. Изчисляване...';
