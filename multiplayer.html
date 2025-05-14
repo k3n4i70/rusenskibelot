@@ -772,6 +772,17 @@
                         }
                     }
                     break;
+                    case "START_PLAYING_PHASE": // НОВО СЪОБЩЕНИЕ
+                    hands = message.hands;
+                    potentialAnnouncements = message.potentialAnnouncements;
+                    currentPlayer = message.currentPlayer;
+                    trumpSuit = message.trumpSuit; // Уверяваме се, че козът е синхронизиран
+                    gameState = 'PLAYING';
+                    sortHands();
+                    renderAllHands();
+                    updatePersistentTrumpInfo();
+                    startPlayingPhase(); // Тази функция ще извика preparePlayerTurn
+                    break;
                 case "BID_UPDATE": // Всички получават това
                     currentBid = message.currentHighestBid; // Всички актуализират currentBid
                     biddingHistory = message.biddingHistory;
