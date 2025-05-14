@@ -457,22 +457,38 @@
                 }
             }
         }
-        // --- Коригирана determineTrickWinner (изпълнява се САМО от хоста или в локална игра) (v7.3) ---
+        // --- КОРИГИРАНА determineTrickWinner (v7.4 - изпълнява се САМО от хоста или в локална игра) ---
         function determineTrickWinner() {
-            gameState = 'SCORING_TRICK';
-            clearCurrentPlayerHighlight();
+            gameState = 'SCORING_TRICK'; // Поставяме състоянието
+            clearCurrentPlayerHighlight(); // Изчистваме подсветката
             setMessage('Изчисляване на взятката...');
-            let winningPlay = findCurrentTrickWinner();
-            if (!winningPlay) { console.error("No trick winner!"); winningPlay = currentTrick[0]; }
+
+            let winningPlay = findCurrentTrickWinner(); // Вземаме целия обект {player, card}
+            if (!winningPlay || !winningPlay.card) {
+                console.error("CRITICAL: No trick winner or winning card found in determineTrickWinner!");
+                // Опит за възстановяване или спиране на рунда - засега просто логваме
+                // и може би преминаваме към следващ дилър, ако е възможно
+                // За сега, нека продължим, но това е лоша ситуация
+                if (currentTrick.length > 0) winningPlay = currentTrick[0]; // Вземи първата карта като fallback
+                else return; // Не можем да направим нищо повече
+            }
+
             const winnerOfTrick = winningPlay.player;
             let pointsForTrick = 0;
-            currentTrick.forEach(play => pointsForTrick += getCardPoints(play.card));
-            const isLastTrickOfRound = (hands.S?.length === 0 && hands.W?.length === 0 && hands.N?.length === 0 && hands.E?.length === 0);
+            currentTrick.forEach(play => {
+                if (play && play.card) pointsForTrick += getCardPoints(play.card);
+            });
+
+            const isLastTrickOfRound = PLAYERS.every(p => hands[p]?.length === 0);
+
             if (isLastTrickOfRound) pointsForTrick += 10;
 
             const winningTeam = (winnerOfTrick === 'N' || winnerOfTrick === 'S') ? 'NS' : 'EW';
             roundScores[winningTeam].points += pointsForTrick;
-            trickHistory.push({ winner: winnerOfTrick, trick: [...currentTrick], points: pointsForTrick });
+            trickHistory.push({ winner: winnerOfTrick, trick: [...currentTrick], points: pointsForTrick }); // Запазваме копие на взятката
+
+            // Важно: currentTrick се изчиства СЛЕД като се изпрати TRICK_RESULT или се обработи локално
+            const trickToSend = [...currentTrick]; // Запазваме копие за изпращане
 
             if (isHost) {
                 broadcastToAll({
@@ -481,19 +497,19 @@
                     winningCard: winningPlay.card,
                     points: pointsForTrick,
                     isLastTrick: isLastTrickOfRound,
-                    roundScores: roundScores // Изпращаме актуализираните точки от рунда
+                    roundScores: JSON.parse(JSON.stringify(roundScores)), // Изпращаме копие
+                    currentTrickForDisplay: trickToSend // Изпращаме копие на взятката за показване
                 });
             } else if (gameMode === 'LOCAL') {
-                // Локално обновяване на съобщението
-                 setMessage(`${getPlayerName(playerNames[winnerOfTrick] || winnerOfTrick)} печели с ${cardToString(winningPlay.card)}. Точки: ${pointsForTrick}${isLastTrickOfRound ? ' (+10)' : ''}`);
-                // Локално изчакване и след това следващо действие
+                setMessage(`${getPlayerName(playerNames[winnerOfTrick] || winnerOfTrick)} печели с ${cardToString(winningPlay.card)}. Точки: ${pointsForTrick}${isLastTrickOfRound ? ' (+10)' : ''}`);
+                // За локална игра, setTimeout е тук
                 setTimeout(() => {
                     clearTrickArea();
-                    currentTrick = []; // Изчистваме тук за локалната игра
+                    currentTrick = []; // Изчистваме за следващата взятка
                     if (isLastTrickOfRound) {
                         endRound();
                     } else {
-                        currentPlayer = winnerOfTrick; // Победителят започва
+                        currentPlayer = winnerOfTrick;
                         gameState = 'PLAYING';
                         startPlayingPhase(); // Това ще извика preparePlayerTurn
                     }
@@ -879,11 +895,20 @@
                     // Гостите чакат SET_CURRENT_PLAYER или TRICK_RESULT
                     break;
 
-                case "SET_CURRENT_PLAYER": // Това е за смяна на ред ПО ВРЕМЕ НА ИГРА НА КАРТИ
+                case "SET_CURRENT_PLAYER": // Това е за смяна на ред ПО ВРЕМЕ НА ИГРА НА КАРТИ ИЛИ НАДДАВАНЕ
                     currentPlayer = message.nextPlayer;
-                    setMessage(`Игра: Ред ${getPlayerName(playerNames[currentPlayer] || currentPlayer)}.`);
-                    updateCurrentPlayerHighlight();
-                    preparePlayerTurn();
+                    console.log(`Network: SET_CURRENT_PLAYER to ${currentPlayer}. MyPos: ${myPosition}`);
+                    if (gameState === 'BIDDING') {
+                        setMessage(`Наддаване: Ред на ${getPlayerName(playerNames[currentPlayer] || currentPlayer)}`);
+                        updateCurrentPlayerHighlight();
+                        updateBiddingControls();
+                    } else if (gameState === 'PLAYING' || gameState === 'SCORING_TRICK') { // Добавено SCORING_TRICK
+                         // Ако сме били в SCORING_TRICK, сега преминаваме към PLAYING за новата ръка
+                        gameState = 'PLAYING';
+                        setMessage(`Игра: Ред ${getPlayerName(playerNames[currentPlayer] || currentPlayer)}.`);
+                        updateCurrentPlayerHighlight();
+                        preparePlayerTurn();
+                    }
                     break;
                 case "BID_UPDATE": // Всички получават това
                     currentBid = message.currentHighestBid; // Всички актуализират currentBid
