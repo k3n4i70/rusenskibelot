@@ -654,13 +654,31 @@
         }
 
         // --- Event Listeners и Първоначално състояние ---
+         // --- Event Listeners и Първоначално състояние ---
          document.addEventListener('DOMContentLoaded', () => {
-            console.log("DOM fully loaded and parsed (v7.1)");
+            console.log("DOM fully loaded and parsed (v7.1 - DOM Check Fix)");
+
+            // Присвояване на DOM елементите...
             persistentTrumpInfoEl = document.getElementById('persistent-trump-info');
-            playerAreaEls = { S: document.getElementById('player-area-S'), W: document.getElementById('player-area-W'), N: document.getElementById('player-area-N'), E: document.getElementById('player-area-E') };
-            playerHands = { S: document.getElementById('hand-S'), W: document.getElementById('hand-W'), N: document.getElementById('hand-N'), E: document.getElementById('hand-E') };
+            playerAreaEls = {
+                S: document.getElementById('player-area-S'),
+                W: document.getElementById('player-area-W'),
+                N: document.getElementById('player-area-N'),
+                E: document.getElementById('player-area-E')
+            };
+            playerHands = {
+                S: document.getElementById('hand-S'),
+                W: document.getElementById('hand-W'),
+                N: document.getElementById('hand-N'),
+                E: document.getElementById('hand-E')
+            };
             trickAreaEl = document.getElementById('trick-area');
-            trickCardSlots = { S: document.getElementById('trick-slot-S'), W: document.getElementById('trick-slot-W'), N: document.getElementById('trick-slot-N'), E: document.getElementById('trick-slot-E') };
+            trickCardSlots = {
+                S: document.getElementById('trick-slot-S'),
+                W: document.getElementById('trick-slot-W'),
+                N: document.getElementById('trick-slot-N'),
+                E: document.getElementById('trick-slot-E')
+            };
             controlsAreaEl = document.getElementById('controls-area');
             controlsButtonsEl = document.getElementById('controls-buttons');
             declaredAnnouncementsDisplayEl = document.getElementById('declared-announcements-display');
@@ -672,31 +690,64 @@
             modalConfirmBtn = document.getElementById('modal-confirm-btn');
             gameContainerEl = document.querySelector('.game-container');
 
-            initializeMultiplayerElements();
+            // Мултиплейър UI елементи
+            roleSelectionEl = document.getElementById('role-selection');
+            playerNameInputEl = document.getElementById('player-name-input');
+            becomeHostBtnEl = document.getElementById('become-host-btn');
+            becomeGuestBtnEl = document.getElementById('become-guest-btn');
+            hostPanelEl = document.getElementById('host-panel');
+            hostPeerIdDisplayEl = document.getElementById('host-peer-id-display');
+            copyHostIdBtnEl = document.getElementById('copy-host-id-btn');
+            connectedGuestsCountEl = document.getElementById('connected-guests-count');
+            guestListEl = document.getElementById('guest-list');
+            mpStartGameBtnEl = document.getElementById('mp-start-game-btn');
+            guestPanelEl = document.getElementById('guest-panel');
+            hostIdInputEl = document.getElementById('host-id-input');
+            connectToHostBtnEl = document.getElementById('connect-to-host-btn');
+            mpConnectionStatusEl = document.getElementById('mp-connection-status');
+
             console.log("DOM elements assigned.");
 
-            const criticalDOMElements = [persistentTrumpInfoEl, playerAreaEls.S, playerHands.S, trickAreaEl, trickCardSlots.S, controlsAreaEl, controlsButtonsEl, declaredAnnouncementsDisplayEl, declaredAnnouncementsListEl, messagesEl, scoreBoardEl, announcementModal, modalAnnouncementsList, modalConfirmBtn, roleSelectionEl, playerNameInputEl, becomeHostBtnEl, becomeGuestBtnEl, hostPanelEl, hostPeerIdDisplayEl, copyHostIdBtnEl, connectedGuestsCountEl, guestListEl, mpStartGameBtnEl, guestPanelEl, hostIdInputEl, connectToHostBtnEl, mpConnectionStatusEl, gameContainerEl];
-            let missingElement = false;
-            criticalDOMElements.forEach((el,index) => {
-                // По-подробна проверка за playerAreaEls и playerHands
-                if (index === 1 || index === 2) { // playerAreaEls, playerHands
-                     if (!el || !el.S || !el.W || !el.N || !el.E ) {
-                         console.error(`Critical DOM object element at index ${index} (playerAreaEls or playerHands) or its properties not found!`);
-                         missingElement = true;
-                     }
-                } else if (!el) {
-                     console.error(`Critical DOM element at index ${index} not found!`);
-                     missingElement = true;
-                }
-            });
-            if (missingElement) { console.error("One or more critical DOM elements NOT FOUND!"); alert("Грешка: Не всички елементи на играта са заредени! Презаредете."); return; }
+            // --- Коригирана Проверка за критични DOM елементи ---
+            const elementsToCheck = {
+                persistentTrumpInfoEl, playerAreaS: playerAreaEls.S, playerAreaW: playerAreaEls.W, playerAreaN: playerAreaEls.N, playerAreaE: playerAreaEls.E,
+                playerHandS: playerHands.S, playerHandW: playerHands.W, playerHandN: playerHands.N, playerHandE: playerHands.E,
+                trickAreaEl, trickSlotS: trickCardSlots.S, trickSlotW: trickCardSlots.W, trickSlotN: trickCardSlots.N, trickSlotE: trickCardSlots.E,
+                controlsAreaEl, controlsButtonsEl, declaredAnnouncementsDisplayEl, declaredAnnouncementsListEl,
+                messagesEl, scoreBoardEl, announcementModal, modalAnnouncementsList, modalConfirmBtn,
+                roleSelectionEl, playerNameInputEl, becomeHostBtnEl, becomeGuestBtnEl, hostPanelEl,
+                hostPeerIdDisplayEl, copyHostIdBtnEl, connectedGuestsCountEl, guestListEl, mpStartGameBtnEl,
+                guestPanelEl, hostIdInputEl, connectToHostBtnEl, mpConnectionStatusEl, gameContainerEl
+            };
 
+            let missingElementName = null;
+            for (const name in elementsToCheck) {
+                if (!elementsToCheck[name]) {
+                    missingElementName = name;
+                    break;
+                }
+            }
+
+            if (missingElementName) {
+                 console.error(`Critical DOM element "${missingElementName}" was not found!`);
+                 alert(`Грешка: Елемент "${missingElementName}" не е намерен! Проверете HTML и ID-тата. Презаредете страницата.`);
+                 return; // Спираме по-нататъшното изпълнение
+            }
+            // --- Край на коригираната проверка ---
+
+            initializeMultiplayerElements(); // Сега това трябва да е дефинирано и елементите налични
+
+            // Първоначално състояние
             setMessage("Изберете роля (Хост/Гост).");
-            updateScoreBoard(); renderAllHands(); clearCurrentPlayerHighlight();
-            updatePersistentTrumpInfo(); hideBiddingControls();
+            updateScoreBoard();
+            renderAllHands(); // Ще покаже празни полета
+            clearCurrentPlayerHighlight();
+            updatePersistentTrumpInfo();
+            hideBiddingControls();
             if(declaredAnnouncementsDisplayEl) declaredAnnouncementsDisplayEl.style.display = 'none';
             if(scoreBoardEl) scoreBoardEl.style.display = 'none';
             if(gameContainerEl) gameContainerEl.style.display = 'none';
+
             console.log("Initial setup complete.");
         });
 
