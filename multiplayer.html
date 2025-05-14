@@ -313,11 +313,12 @@
                 }
             }
         }
+                // --- Корекция в processPlayedCard (изпълнява се САМО от хоста или в локална игра) ---
         function processPlayedCard(playerPos, cardId) {
             console.log(`processPlayedCard for player: ${playerPos}, card: ${cardId}`);
             if (playerPos !== currentPlayer || gameState !== 'PLAYING') {
                 console.warn("processPlayedCard: Not current player or not playing state.");
-                return; // Допълнителна проверка
+                return;
             }
 
             const cardToPlay = hands[playerPos]?.find(c => c.id === cardId);
@@ -325,9 +326,6 @@
                 console.error("processPlayedCard: Card not found!");
                 return;
             }
-            // isPlayable вече би трябвало да е проверена преди извикването на тази функция
-            // или преди изпращането на PLAY_CARD от госта.
-            // За всеки случай, може да се добави проверка тук, ако хостът трябва да валидира отново.
 
             // 1. Актуализиране на локалното състояние (за хоста или локална игра)
             hands[playerPos] = hands[playerPos].filter(c => c.id !== cardId);
@@ -335,20 +333,17 @@
 
             // 2. Проверка за Белот
             let belotInfo = null;
+            // ... (логиката за belotInfo остава същата) ...
             if (trumpSuit && trumpSuit !== 'NO_TRUMP' && trumpSuit !== 'PASS' &&
                 belotStatus[playerPos].hasKQ && !belotStatus[playerPos].declared) {
                 const trumpSuitSymbol = SUITS[trumpSuit];
                 if (cardToPlay.suit === trumpSuitSymbol && (cardToPlay.rank === 'K' || cardToPlay.rank === 'Q')) {
                     const belotAnn = potentialAnnouncements[playerPos]?.find(a => a.type === 'BELOT');
                     if (belotAnn) {
-                        // При мултиплейър, потвърждението за Белот от гост ще дойде като отделно съобщение
-                        // или ще приемем, че ако гостът играе K/Q от коза и има белот, той го обявява.
-                        // За хоста, можем да питаме.
-                        let declareBelot = false;
-                        if (playerPos === myPosition && (isHost || gameMode === 'LOCAL')) { // Хост играе за себе си или локална игра
-                            declareBelot = confirm(`Имате Белот (${cardToPlay.rank}${cardToPlay.suit})! Искате ли да го обявите?`);
-                        } else if (isHost && playerPos !== myPosition) { // Хост обработва ход на гост
-                            declareBelot = true; // Приемаме, че гостът би обявил, ако е играл K/Q от коза
+                        let declareBelot = true; // Приемаме, че се обявява, ако е възможно
+                        if (playerPos === myPosition && (isHost || gameMode === 'LOCAL')) { // Само ако аз съм този играч (и съм хост/локално)
+                           // declareBelot = confirm(`Имате Белот (${cardToPlay.rank}${cardToPlay.suit})! Искате ли да го обявите?`);
+                           // За улеснение на тестването, нека винаги да се обявява, ако е налично
                         }
 
                         if (declareBelot) {
@@ -357,23 +352,24 @@
                             if (!declaredAnnouncements[playerPos].some(a => a.type === 'BELOT')) {
                                 declaredAnnouncements[playerPos].push(belotAnn);
                             }
-                            // updateDeclaredAnnouncementsDisplay(); // Ще се обнови от CARD_PLAYED
-                            // setMessage(belotMessage); // Ще се обнови от CARD_PLAYED
-                            belotInfo = { playerPos: playerPos, message: belotMessage };
+                            belotInfo = { playerPos: playerPos, message: belotMessage, announcements: declaredAnnouncements[playerPos] };
                         }
                     }
                 }
             }
 
+
             // 3. Ако е хост, изпраща актуализацията
             if (isHost) {
-                broadcastToAll({
+                broadcastToAll({ // Изпраща на всички, включително на себе си
                     type: "CARD_PLAYED",
                     playerPos: playerPos,
                     card: cardToPlay,
                     currentTrick: currentTrick,
-                    belotInfo: belotInfo // Изпращаме информация за Белот, ако е обявен
+                    belotInfo: belotInfo
                 });
+                // След като е изпратено, хостът веднага преминава към следващия ход или край на взятка
+                // moveToNextPlayerInTrick(); // ТОВА СЕ ИЗВИКВА ВЕДНАГА СЛЕД BROADCAST
             } else if (gameMode === 'LOCAL') {
                 // Локална игра: ръчно рендиране и преминаване
                 renderHand(playerPos);
@@ -385,8 +381,9 @@
                 moveToNextPlayerInTrick();
             }
             // Гостите не правят нищо тук, те чакат CARD_PLAYED от хоста.
+            // След като хостът изпрати CARD_PLAYED, той ще извика moveToNextPlayerInTrick,
+            // което пък ще изпрати NEXT_PLAYER_TRICK или TRICK_RESULT.
         }
-        function moveToNextPlayerInTrick(){if(currentTrick.length===4){determineTrickWinner();}else{currentPlayer=getNextPlayer(currentPlayer);if(isHost||gameMode==='LOCAL'){broadcastToAll({type:"NEXT_PLAYER_TRICK",nextPlayer:currentPlayer});} setMessage(`Игра: ${BID_NAMES[trumpSuit]}. Ред ${getPlayerName(playerNames[currentPlayer]||currentPlayer)}.`);updateCurrentPlayerHighlight();preparePlayerTurn();}}
         function determineTrickWinner(){gameState='SCORING_TRICK';clearCurrentPlayerHighlight();setMessage('Изчисляване...');let winP=findCurrentTrickWinner();if(!winP){console.error("No trick winner!");winP=currentTrick[0];} const win=winP.player;let pts=0;currentTrick.forEach(pl=>pts+=getCardPoints(pl.card));const last=(hands.S?.length===0&&hands.W?.length===0&&hands.N?.length===0&&hands.E?.length===0);if(last)pts+=10;const winT=(win=='N'||win=='S')?'NS':'EW';roundScores[winT].points+=pts;if(isHost||gameMode==='LOCAL'){broadcastToAll({type:"TRICK_RESULT",winner:win,winningCard:winP.card,points:pts,isLastTrick:last,roundScores:roundScores});} setMessage(`${getPlayerName(playerNames[win]||win)} печели с ${cardToString(winP.card)}. Точки: ${pts}${last?' (+10)':''}`);trickHistory.push({winner:win,trick:[...currentTrick],points:pts});setTimeout(()=>{clearTrickArea();if(last){if(isHost||gameMode==='LOCAL')endRound();}else{currentPlayer=win;gameState='PLAYING';startPlayingPhase();}},1800);}
         function endRound() {
             gameState = 'END_ROUND';
