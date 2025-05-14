@@ -968,15 +968,14 @@
     preparePlayerTurn(); // Това ще извика allowCardPlay, което ще извика updatePlayableCards
     break;
                 case "TRICK_RESULT": // Всички получават това
-                    roundScores = message.roundScores; // Актуализираме точките
-                    // Показваме кой е спечелил взятката
+                    roundScores = message.roundScores;
                     setMessage(`${getPlayerName(playerNames[message.winner] || message.winner)} печели с ${cardToString(message.winningCard)}. Точки: ${message.points}${message.isLastTrick?' (+10)':''}`);
+                    trickHistory.push({winner:message.winner, trick:message.currentTrickForDisplay || currentTrick, points:message.points}); // Запазваме историята
                     // Показваме взятката, която току-що е приключила (ако е изпратена)
                     if (message.currentTrickForDisplay) {
-                        currentTrick = message.currentTrickForDisplay; // За да се види за малко
+                        currentTrick = message.currentTrickForDisplay;
                         renderTrickArea();
                     }
-                    trickHistory.push({winner:message.winner, trick: message.currentTrickForDisplay || [], points:message.points}); // Запазваме историята
 
                     setTimeout(()=>{
                         clearTrickArea(); // Изчистваме визуално масата
@@ -986,10 +985,20 @@
                              if(isHost) endRound(); // Само хостът изчислява края на рунда
                              // Гостите чакат ROUND_END_INFO
                         } else {
-                            // Хостът вече трябва да е изпратил SET_CURRENT_PLAYER с победителя от взятката
-                            // Това ще се случи в неговия determineNextActionAfterPlay -> determineTrickWinner -> (ако не е край) -> и там ще изпрати SET_CURRENT_PLAYER
-                            // Гостите просто чакат това съобщение.
-                            // Ако съм хост, вече съм изпратил SET_CURRENT_PLAYER в determineNextActionAfterPlay (ако не е последна взятка)
+                             // Взятката НЕ е последна
+                             if (isHost) { // Само хостът определя кой е следващия на ход
+                                 const nextPlayerAfterTrick = message.winner; // Победителят от взятката започва
+                                 // Не задаваме currentPlayer тук, а изпращаме съобщение
+                                 // determineNextActionAfterPlay ще се погрижи за това, като изпрати SET_CURRENT_PLAYER
+                                 // Вместо това, нека determineNextActionAfterPlay да се извика само след CARD_PLAYED
+                                 // и determineTrickWinner да инициира следващия SET_CURRENT_PLAYER
+                                 console.log(`Host: Trick ended. Winner ${nextPlayerAfterTrick} starts next trick.`);
+                                 // Хостът директно задава новия currentPlayer и изпраща
+                                 currentPlayer = nextPlayerAfterTrick;
+                                 broadcastToAll({type: "SET_CURRENT_PLAYER", nextPlayer: currentPlayer});
+                                 // preparePlayerTurn() ще се извика при всички, когато получат SET_CURRENT_PLAYER
+                             }
+                             // Гостите просто чакат SET_CURRENT_PLAYER
                         }
                     }, 1800);
                     break;
