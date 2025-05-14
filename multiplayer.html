@@ -815,7 +815,7 @@
 
                 case "PLAY_CARD": // Само хостът получава това
                     if (isHost) {
-                        const playerPosition = playerPeerIds[fromPeerId]; // Намираме позицията на госта
+                        const playerPosition = playerPeerIds[fromPeerId];
                         if (playerPosition && playerPosition === currentPlayer) {
                             console.log(`Host processing PLAY_CARD from ${getPlayerName(playerNames[playerPosition] || playerPosition)} (${playerPosition}), card: ${message.cardId}`);
                             processPlayedCard(playerPosition, message.cardId); // Хостът обработва и изпраща CARD_PLAYED
@@ -826,7 +826,7 @@
                     break;
 
                 case "CARD_PLAYED": // Всички получават това
-                    console.log(`Processing CARD_PLAYED for ${message.playerPos}, card: ${message.card?.id}`);
+                    console.log(`Processing CARD_PLAYED for ${message.playerPos}, card: ${message.card?.id}. MyPos: ${myPosition}`);
                     currentTrick = message.currentTrick;
                     if (hands[message.playerPos] && message.card) {
                         hands[message.playerPos] = hands[message.playerPos].filter(c => c.id !== message.card.id);
@@ -835,31 +835,26 @@
                     renderTrickArea();
 
                     if (message.belotInfo) {
-                        belotStatus[message.belotInfo.playerPos].declared = true;
-                        const belotAnnObject = potentialAnnouncements[message.belotInfo.playerPos]?.find(a => a.type === 'BELOT');
-                        if (belotAnnObject && !declaredAnnouncements[message.belotInfo.playerPos].some(a => a.type === 'BELOT')) {
-                            declaredAnnouncements[message.belotInfo.playerPos].push(belotAnnObject);
+                        // Проверка дали вече не е обявен белотът от този играч (за да не се дублира съобщението при хоста)
+                        if (!belotStatus[message.belotInfo.playerPos].declared || message.playerPos !== myPosition) {
+                            belotStatus[message.belotInfo.playerPos].declared = true;
+                            const belotAnnObject = potentialAnnouncements[message.belotInfo.playerPos]?.find(a => a.type === 'BELOT');
+                            if (belotAnnObject && !declaredAnnouncements[message.belotInfo.playerPos].some(a => a.type === 'BELOT')) {
+                                declaredAnnouncements[message.belotInfo.playerPos].push(belotAnnObject);
+                            }
+                            updateDeclaredAnnouncementsDisplay();
+                            setMessage(message.belotInfo.message);
                         }
-                        updateDeclaredAnnouncementsDisplay();
-                        setMessage(message.belotInfo.message);
                     }
-
-                    // Хостът инициира преминаването към следващ играч, ако той е изиграл картата
-                    if (isHost && message.playerPos === playerPeerIds[fromPeerId]) { // Проверяваме дали fromPeerId е този, който е играл
-                        moveToNextPlayerInTrick();
-                    }
-                    // Ако хостът е играл и това е съобщението за неговия ход (изпратено чрез broadcastToAll)
-                    else if (isHost && message.playerPos === myPosition && fromPeerId === myPeerId) {
-                        moveToNextPlayerInTrick();
-                    }
-                    // Гостите просто актуализират и чакат NEXT_PLAYER_TRICK или TRICK_RESULT
+                    // **ПРЕМАХНАТО:** moveToNextPlayerInTrick() се извиква само от хоста в processPlayedCard
+                    // Гостите чакат NEXT_PLAYER_TRICK или TRICK_RESULT
                     break;
 
                 case "NEXT_PLAYER_TRICK": // Всички получават това
                     currentPlayer = message.nextPlayer;
                     setMessage(`Игра: Ред ${getPlayerName(playerNames[currentPlayer] || currentPlayer)}.`);
                     updateCurrentPlayerHighlight();
-                    preparePlayerTurn(); // Това ще покаже модал за анонс, ако е първа ръка за играча
+                    preparePlayerTurn();
                     break;
 
                 case "TRICK_RESULT": // Всички получават това
